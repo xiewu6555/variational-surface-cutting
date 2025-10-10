@@ -2,7 +2,9 @@
 
 #include "polygon_soup_mesh.h"
 #include "dense_matrix.h"
+#ifdef HAVE_SUITESPARSE
 #include "fast_cholesky.h"
+#endif
 
 #include <string>
 #include <sstream>
@@ -77,7 +79,9 @@ FastTriangleSoup::FastTriangleSoup(Geometry<Euclidean>* geometry) {
 }
 
 FastTriangleSoup::~FastTriangleSoup() {
+#ifdef HAVE_SUITESPARSE
     delete interiorLaplacian;
+#endif
 }
 
 
@@ -186,9 +190,14 @@ void FastTriangleSoup::solveLaplaceDirichlet(vector<double>& inputVals) {
         }
     }
 
-    // Allocate the Cholesky matrix and right hand side
+    // Allocate the solver matrix and right hand side
+#ifdef HAVE_SUITESPARSE
     FastCholesky L(nInterior);
     L.reserveColumns(degreeEst);
+#else
+    // When SuiteSparse is not available, use a simple identity placeholder
+    // This function will not produce correct results without SuiteSparse
+#endif
     GC::DenseVector<double> rhs(nInterior);
 
     // Build the Poisson problem
@@ -211,29 +220,43 @@ void FastTriangleSoup::solveLaplaceDirichlet(vector<double>& inputVals) {
             double cotanA = cotan[iTri][iR];
             double cotanB = cotan[iTri][iB];
         
-            // Integral against neighbor A 
+            // Integral against neighbor A
             if(ind[indA] != INVALID_IND) {
+#ifdef HAVE_SUITESPARSE
                 L.addValue(ind[indRoot], ind[indA], -0.5 * cotanA);
+#endif
             } else {
                 rhs(ind[indRoot]) += 0.5 * cotanA * inputVals[indA];
             }
         
             // Integral against neighbor B
             if(ind[indB] != INVALID_IND) {
+#ifdef HAVE_SUITESPARSE
                 L.addValue(ind[indRoot], ind[indB], -0.5 * cotanB);
+#endif
             } else {
                 rhs(ind[indRoot]) += 0.5 * cotanB * inputVals[indB];
             }
         
             // Integral against central vertex
+#ifdef HAVE_SUITESPARSE
             L.addValue(ind[indRoot], ind[indRoot], 0.5 * (cotanA + cotanB));
+#endif
         }
     }
 
     // Solve the Poisson problem
+#ifdef HAVE_SUITESPARSE
     L.shiftDiagonal(1e-4);
     L.factor();
     GC::DenseVector<double> x = L.solve(rhs);
+#else
+    // Fallback: return input values when SuiteSparse not available
+    GC::DenseVector<double> x(nInterior);
+    for(size_t i = 0; i < nInterior; i++) {
+        x(i) = 0.0;
+    }
+#endif
 
     // Store the result 
     for(size_t i = 0; i < nVert; i++) {
@@ -246,16 +269,90 @@ void FastTriangleSoup::solveLaplaceDirichlet(vector<double>& inputVals) {
 
 vector<double> FastTriangleSoup::solveYamabeProblem() {
 
+    int thread_id = 0;
+    #ifdef _OPENMP
+    thread_id = omp_get_thread_num();
+    #endif
+
+    #pragma omp critical
+    {
+        cout << "[DEBUG FastTriangleSoup::solveYamabeProblem] Thread " << thread_id << " entering" << endl;
+        cout << "  - nVert: " << nVert << endl;
+        cout << "  - nTri: " << nTri << endl;
+        cout << "  - nInterior: " << nInterior << endl;
+        cout << "  - faceCurvature.size(): " << faceCurvature.size() << endl;
+        cout << "  - geometryCached: " << geometryCached << endl;
+        cout << "  - haveInteriorLaplacian: " << haveInteriorLaplacian << endl;
+        cout.flush();
+    }
+
+    // 验证faceCurvature有效性
+    if(faceCurvature.size() != nTri) {
+        #pragma omp critical
+        {
+            cerr << "[ERROR] Thread " << thread_id << " faceCurvature size mismatch!" << endl;
+            cerr << "  Expected: " << nTri << ", Got: " << faceCurvature.size() << endl;
+        }
+        throw std::runtime_error("faceCurvature size mismatch in solveYamabeProblem");
+    }
+
     std::vector<double> negCurvature = faceCurvature;
     for(double& x : negCurvature) x *= -1.0;
 
-    return solveInteriorPoissonFace(negCurvature);
+    #pragma omp critical
+    {
+        cout << "[DEBUG FastTriangleSoup::solveYamabeProblem] Thread " << thread_id
+             << " calling solveInteriorPoissonFace..." << endl;
+        cout.flush();
+    }
+
+    vector<double> result = solveInteriorPoissonFace(negCurvature);
+
+    #pragma omp critical
+    {
+        cout << "[DEBUG FastTriangleSoup::solveYamabeProblem] Thread " << thread_id
+             << " returned from solveInteriorPoissonFace" << endl;
+        cout << "  - result.size(): " << result.size() << endl;
+        cout.flush();
+    }
+
+    // 验证结果向量大小
+    if(result.size() != nVert) {
+        #pragma omp critical
+        {
+            cerr << "[CRITICAL ERROR] Thread " << thread_id
+                 << " result size mismatch from solveInteriorPoissonFace!" << endl;
+            cerr << "  Expected: " << nVert << ", Got: " << result.size() << endl;
+        }
+        throw std::runtime_error("result size mismatch in solveYamabeProblem");
+    }
+
+    // 验证结果的有效性
+    for(size_t i = 0; i < result.size(); i++) {
+        if(!std::isfinite(result[i])) {
+            #pragma omp critical
+            {
+                cerr << "[ERROR] Thread " << thread_id
+                     << " non-finite result[" << i << "] = " << result[i] << endl;
+            }
+            throw std::runtime_error("Non-finite result in solveYamabeProblem");
+        }
+    }
+
+    #pragma omp critical
+    {
+        cout << "[DEBUG FastTriangleSoup::solveYamabeProblem] Thread " << thread_id
+             << " completed successfully" << endl;
+        cout.flush();
+    }
+
+    return result;
 }
 
 
 
 void FastTriangleSoup::buildInteriorLaplacian() {
-
+#ifdef HAVE_SUITESPARSE
     if(!geometryCached) {
         cacheGeometry();
     }
@@ -307,29 +404,29 @@ void FastTriangleSoup::buildInteriorLaplacian() {
             size_t iR = iRoot;
             size_t iA = (iRoot+1)%3;
             size_t iB = (iRoot+2)%3;
-            
+
             size_t indRoot = t[iR];
             size_t indA = t[iA];
             size_t indB = t[iB];
-        
+
             if(isBoundaryVertex[indRoot]) continue;
-        
+
             double cotanA = cotan[iTri][iR];
             double cotanB = cotan[iTri][iB];
-        
-            // Integral against neighbor A 
+
+            // Integral against neighbor A
             if(!isBoundaryVertex[indA]) {
                 interiorLaplacian->addValue(interiorInd[indRoot], interiorInd[indA], -0.5 * cotanA);
             }
-        
+
             // Integral against neighbor B
             if(!isBoundaryVertex[indB]) {
                 interiorLaplacian->addValue(interiorInd[indRoot], interiorInd[indB], -0.5 * cotanB);
             }
-        
+
             // Integral against central vertex
             interiorLaplacian->addValue(interiorInd[indRoot], interiorInd[indRoot], 0.5 * (cotanA + cotanB));
-        
+
         }
     }
 
@@ -338,6 +435,10 @@ void FastTriangleSoup::buildInteriorLaplacian() {
     interiorLaplacian->factor();
 
     haveInteriorLaplacian = true;
+#else
+    // SuiteSparse not available, mark as having no interior Laplacian
+    haveInteriorLaplacian = false;
+#endif
 }
 
 
@@ -348,6 +449,23 @@ vector<double> FastTriangleSoup::solveInteriorPoisson(const std::vector<double>&
         buildInteriorLaplacian();
     }
 
+    // CRITICAL FIX: 处理退化patch（无内部顶点）
+    if(nInterior == 0) {
+        int thread_id = 0;
+        #ifdef _OPENMP
+        thread_id = omp_get_thread_num();
+        #endif
+
+        #pragma omp critical
+        {
+            cout << "[WARNING FastTriangleSoup::solveInteriorPoisson] Thread " << thread_id
+                 << " patch has no interior vertices!" << endl;
+            cout.flush();
+        }
+
+        vector<double> result(nVert, 0.0);
+        return result;
+    }
 
     // Build the RHS
     GC::DenseVector<double> rhs(nInterior);
@@ -385,7 +503,15 @@ vector<double> FastTriangleSoup::solveInteriorPoisson(const std::vector<double>&
     }
 
     // Solve
+#ifdef HAVE_SUITESPARSE
     GC::DenseVector<double> x = interiorLaplacian->solve(rhs);
+#else
+    // Fallback: return zeros when SuiteSparse not available
+    GC::DenseVector<double> x(nInterior);
+    for(size_t i = 0; i < nInterior; i++) {
+        x(i) = 0.0;
+    }
+#endif
 
     // Store the result in interior vertices
     vector<double> result(nVert, 0.0);
@@ -451,6 +577,29 @@ vector<double> FastTriangleSoup::solveInteriorPoissonFace(const std::vector<doub
         buildInteriorLaplacian();
     }
 
+    // ========== CRITICAL FIX: 处理退化patch（无内部顶点）==========
+    // 如果patch没有内部顶点（所有顶点都在边界上），无法构建内部Laplacian
+    // 这种情况下，返回全零向量（边界顶点的法向导数将在后续计算）
+    if(nInterior == 0) {
+        int thread_id = 0;
+        #ifdef _OPENMP
+        thread_id = omp_get_thread_num();
+        #endif
+
+        #pragma omp critical
+        {
+            cout << "[WARNING FastTriangleSoup::solveInteriorPoissonFace] Thread " << thread_id
+                 << " patch has no interior vertices (nInterior=0)!" << endl;
+            cout << "  This is a degenerate patch with all vertices on boundary." << endl;
+            cout << "  Returning zero vector for interior solution." << endl;
+            cout.flush();
+        }
+
+        // 返回全零向量
+        vector<double> result(nVert, 0.0);
+        return result;
+    }
+    // ========== 修复结束 ==========
 
     // Build the RHS
     GC::DenseVector<double> rhs(nInterior);
@@ -480,7 +629,15 @@ vector<double> FastTriangleSoup::solveInteriorPoissonFace(const std::vector<doub
     }
 
     // Solve
+#ifdef HAVE_SUITESPARSE
     GC::DenseVector<double> x = interiorLaplacian->solve(rhs);
+#else
+    // Fallback: return zeros when SuiteSparse not available
+    GC::DenseVector<double> x(nInterior);
+    for(size_t i = 0; i < nInterior; i++) {
+        x(i) = 0.0;
+    }
+#endif
 
     // Store the result in interior vertices
     vector<double> result(nVert, 0.0);
@@ -582,7 +739,15 @@ void FastTriangleSoup::extendFromBoundary(std::vector<double>& vals) {
     }
 
     // Solve
+#ifdef HAVE_SUITESPARSE
     GC::DenseVector<double> x = interiorLaplacian->solve(rhs);
+#else
+    // Fallback: return zeros when SuiteSparse not available
+    GC::DenseVector<double> x(nInterior);
+    for(size_t i = 0; i < nInterior; i++) {
+        x(i) = 0.0;
+    }
+#endif
 
     // DEBUG
     for(size_t i = 0; i < x.nRows(); i++) {

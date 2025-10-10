@@ -1,5 +1,7 @@
 #include "local_feature_size.h"
 
+#include <string>
+#include <stdexcept>
 #include "fast_marching_method.h"
 
 VertexData<double> computeLocalFeatureSize_eikonal(Geometry<Euclidean>* geometry) {
@@ -40,6 +42,24 @@ VertexData<double> computeLocalFeatureSize_eikonal(Geometry<Euclidean>* geometry
 VertexData<double> computeLocalFeatureSize_smooth(Geometry<Euclidean>* geometry, GC::SparseMatrix<double>& zeroFormLaplacian, double smoothing) {
     HalfedgeMesh* mesh = geometry->getMesh();
 
+    // Validate input parameters
+    if (mesh == nullptr) {
+        throw std::runtime_error("computeLocalFeatureSize_smooth: mesh is null");
+    }
+
+    size_t nVerts = mesh->nVertices();
+    if (nVerts == 0) {
+        throw std::runtime_error("computeLocalFeatureSize_smooth: mesh has no vertices");
+    }
+
+    // Validate Laplacian dimensions
+    if (zeroFormLaplacian.nRows() != nVerts || zeroFormLaplacian.nColumns() != nVerts) {
+        throw std::runtime_error("computeLocalFeatureSize_smooth: Laplacian size mismatch. Expected " +
+                                 std::to_string(nVerts) + "x" + std::to_string(nVerts) +
+                                 " but got " + std::to_string(zeroFormLaplacian.nRows()) +
+                                 "x" + std::to_string(zeroFormLaplacian.nColumns()));
+    }
+
     // Minimum feature size throughout the shape
     // TODO not the most principled value; orientation dependent
     double minCurvature = 1.0 / std::pow(geometry->lengthScale(), 2.0);
@@ -63,7 +83,10 @@ VertexData<double> computeLocalFeatureSize_smooth(Geometry<Euclidean>* geometry,
     double smoothCoef = smoothing; // how much smoothing to do (1 --> 100% smoothing)
     GC::SparseMatrix<double> smoothOp = smoothCoef * zeroFormLaplacian + (1.0 - smoothCoef) * GC::SparseMatrix<double>::identity(mesh->nVertices());
     GC::DenseVector<double> rhs = (1.0 - smoothCoef) * featureCurvature.toVector();
-    GC::DenseVector<double> result;
+
+    // Initialize result vector with correct size before solving
+    GC::DenseVector<double> result(mesh->nVertices());
+
     // solvePositiveDefinite(smoothOp, result, rhs);
     GC::solve(smoothOp, result, rhs);
 

@@ -8,7 +8,9 @@
 #include "utilities.h"
 #include "geometry.h"
 #include "surface_patch.h"
+#ifdef HAVE_SUITESPARSE
 #include "fast_cholesky.h"
+#endif
 #include "fast_triangle_soup.h"
 #include "disjoint_sets.h"
 #include "detect_symmetry.h"

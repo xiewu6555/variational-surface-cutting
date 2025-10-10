@@ -1,0 +1,67 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "stm-debug",
+      "displayName": "Debug (Surface Texture Mapping)",
+      "description": "使用 Debug 模式构建 Surface Texture Mapping 项目",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/STM-Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg-local/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "stm-release",
+      "displayName": "Release (Surface Texture Mapping)",
+      "description": "使用 Release 模式构建 Surface Texture Mapping 项目",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/STM-Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg-local/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "stm-relwithdebinfo",
+      "displayName": "RelWithDebInfo (Surface Texture Mapping)",
+      "description": "使用 Release with Debug Info 模式构建 Surface Texture Mapping 项目（优化但包含调试信息）",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/STM-RelWithDebInfo",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg-local/scripts/buildsystems/vcpkg.cmake"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "stm-debug",
+      "configurePreset": "stm-debug",
+      "displayName": "Debug 构建 (Surface Texture Mapping)",
+      "description": "使用 Debug 配置构建 Surface Texture Mapping 项目",
+      "configuration": "Debug"
+    },
+    {
+      "name": "stm-release",
+      "configurePreset": "stm-release",
+      "displayName": "Release 构建 (Surface Texture Mapping)",
+      "description": "使用 Release 配置构建 Surface Texture Mapping 项目",
+      "configuration": "Release"
+    },
+    {
+      "name": "stm-relwithdebinfo",
+      "configurePreset": "stm-relwithdebinfo",
+      "displayName": "RelWithDebInfo 构建 (Surface Texture Mapping)",
+      "description": "使用 RelWithDebInfo 配置构建 Surface Texture Mapping 项目（优化但包含调试信息）",
+      "configuration": "RelWithDebInfo"
+    }
+  ]
+}

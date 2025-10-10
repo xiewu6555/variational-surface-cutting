@@ -1,6 +1,7 @@
 #include "surface_patch.h"
 
 #include "sparse_matrix.h"
+#include <numeric>
 
 SurfacePatch::SurfacePatch( const std::vector<Tri>& triangles_, 
                             const std::vector<Vector3>& vertices_,
@@ -397,8 +398,120 @@ void SurfacePatch::addHenckyDistortionGradient(double weight) {
 
 void SurfacePatch::solveYamabeProblem() {
 
+    int thread_id = 0;
+    #ifdef _OPENMP
+    thread_id = omp_get_thread_num();
+    #endif
+
+    #pragma omp critical
+    {
+        cout << "[DEBUG SurfacePatch::solveYamabeProblem] Thread " << thread_id
+             << " entering for patch with nVert=" << nVert << ", nTri=" << nTri << endl;
+        cout << "  - soupMesh.vertices.size(): " << soupMesh.vertices.size() << endl;
+        cout << "  - soupMesh.triangles.size(): " << soupMesh.triangles.size() << endl;
+        cout << "  - soupMesh.geometryCached: " << soupMesh.geometryCached << endl;
+        cout.flush();
+    }
+
+    // 防御性检查：确保几何数据已缓存
+    if(!soupMesh.geometryCached) {
+        #pragma omp critical
+        {
+            cout << "[DEBUG SurfacePatch::solveYamabeProblem] Thread " << thread_id
+                 << " geometry not cached, calling cacheGeometry()" << endl;
+            cout.flush();
+        }
+        soupMesh.cacheGeometry();
+    }
+
+    // 验证dualArea是否有效
+    #pragma omp critical
+    {
+        cout << "[DEBUG SurfacePatch::solveYamabeProblem] Thread " << thread_id
+             << " checking dualArea validity..." << endl;
+        cout << "  - dualArea.size(): " << soupMesh.dualArea.size() << endl;
+        cout.flush();
+    }
+
+    if(soupMesh.dualArea.size() != nVert) {
+        #pragma omp critical
+        {
+            cerr << "[ERROR] Thread " << thread_id << " dualArea size mismatch!" << endl;
+            cerr << "  Expected: " << nVert << ", Got: " << soupMesh.dualArea.size() << endl;
+        }
+        throw std::runtime_error("dualArea size mismatch in solveYamabeProblem");
+    }
+
+    // 检查是否有零或负的dualArea
+    for(size_t i = 0; i < nVert; i++) {
+        if(soupMesh.dualArea[i] <= 0.0 || !std::isfinite(soupMesh.dualArea[i])) {
+            #pragma omp critical
+            {
+                cerr << "[ERROR] Thread " << thread_id << " invalid dualArea[" << i << "] = "
+                     << soupMesh.dualArea[i] << endl;
+            }
+            throw std::runtime_error("Invalid dualArea in solveYamabeProblem");
+        }
+    }
+
     // Do the hard work
-    distortion = soupMesh.solveYamabeProblem();
+    #pragma omp critical
+    {
+        cout << "[DEBUG SurfacePatch::solveYamabeProblem] Thread " << thread_id
+             << " calling soupMesh.solveYamabeProblem()..." << endl;
+        cout.flush();
+    }
+
+    try {
+        distortion = soupMesh.solveYamabeProblem();
+    } catch(const std::exception& e) {
+        #pragma omp critical
+        {
+            cerr << "[ERROR] Thread " << thread_id
+                 << " exception in soupMesh.solveYamabeProblem(): " << e.what() << endl;
+        }
+        throw;
+    }
+
+    #pragma omp critical
+    {
+        cout << "[DEBUG SurfacePatch::solveYamabeProblem] Thread " << thread_id
+             << " returned from soupMesh.solveYamabeProblem()" << endl;
+        cout << "  - distortion.size(): " << distortion.size() << endl;
+        cout.flush();
+    }
+
+    // 立即验证distortion向量大小
+    if(distortion.size() != nVert) {
+        #pragma omp critical
+        {
+            cerr << "[CRITICAL ERROR] Thread " << thread_id
+                 << " distortion vector size mismatch after solve!" << endl;
+            cerr << "  Expected size: " << nVert << endl;
+            cerr << "  Actual size: " << distortion.size() << endl;
+            cerr << "  This indicates solveYamabeProblem() returned wrong size vector!" << endl;
+        }
+        throw std::runtime_error("distortion vector size mismatch");
+    }
+
+    // 验证distortion值的有效性
+    for(size_t i = 0; i < distortion.size(); i++) {
+        if(!std::isfinite(distortion[i])) {
+            #pragma omp critical
+            {
+                cerr << "[ERROR] Thread " << thread_id
+                     << " non-finite distortion[" << i << "] = " << distortion[i] << endl;
+            }
+            throw std::runtime_error("Non-finite distortion value");
+        }
+    }
+
+    #pragma omp critical
+    {
+        cout << "[DEBUG SurfacePatch::solveYamabeProblem] Thread " << thread_id
+             << " distortion values validated, moving boundary values..." << endl;
+        cout.flush();
+    }
 
     // Move boundary values
     yamabeDuDn.resize(nBoundaryVertices);
@@ -406,7 +519,14 @@ void SurfacePatch::solveYamabeProblem() {
         yamabeDuDn[bInd[bI]] = distortion[bI];
         distortion[bI] = 0.0; // boundary condition
     }
-    
+
+    #pragma omp critical
+    {
+        cout << "[DEBUG SurfacePatch::solveYamabeProblem] Thread " << thread_id
+             << " completed successfully" << endl;
+        cout.flush();
+    }
+
 }
     
 double SurfacePatch::computeBoundaryLengthEnergy() {
@@ -544,6 +664,15 @@ double SurfacePatch::computeLocalScaledDirichletDistortionEnergy() {
 double SurfacePatch::computeHenckyDistortionEnergy() {
 
     double E = 0;
+
+    // Defensive check: ensure distortion vector is properly initialized
+    if(distortion.size() != nVert) {
+        std::cerr << "[ERROR] computeHenckyDistortionEnergy: distortion vector size mismatch!" << std::endl;
+        std::cerr << "        Expected size: " << nVert << ", Actual size: " << distortion.size() << std::endl;
+        std::cerr << "        This usually means solveYamabeProblem() was not called or failed." << std::endl;
+        std::cerr << "        Returning zero energy to prevent crash." << std::endl;
+        return 0.0;
+    }
 
     for(size_t iVert = 0; iVert < nVert; iVert++) {
 

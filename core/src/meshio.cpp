@@ -245,7 +245,7 @@ bool PLY::write(std::string filename, Geometry<Euclidean> &geometry, VertexData<
     out << "property list uchar int vertex_index" << endl;
     out << "end_header" << endl;
 
-    auto round255 = [&](double v) { return static_cast<int>(clamp(std::round(v * 255), 0.0, 255.)); };
+    auto round255 = [&](double v) { return static_cast<int>(gcClamp(std::round(v * 255), 0.0, 255.)); };
 
     // Vertices
     for (VertexPtr v : mesh->vertices())

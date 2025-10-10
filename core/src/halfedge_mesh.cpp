@@ -401,21 +401,43 @@ HalfedgeMesh::HalfedgeMesh(const PolygonSoupMesh& input, Geometry<Euclidean>*& g
 
     // First, do a pre-walk to count the boundary loops we will need and allocate them
     size_t nBoundaryLoops = 0;
-    std::set<HalfedgePtr> walkedHalfedges;
+    std::unordered_set<Halfedge*> walkedHalfedges;
     for(size_t iHe = 0; iHe < nHalfedges(); iHe++) {
 
-        if(halfedge(iHe)->twin == nullptr && walkedHalfedges.find(halfedge(iHe)) == walkedHalfedges.end()) {
-            nBoundaryLoops++;
-            HalfedgePtr currHe = halfedge(iHe);
-            walkedHalfedges.insert(currHe);
-            do {
-                currHe = currHe->next;
-                while(currHe->twin != nullptr) {
-                    currHe = currHe->twin->next;
-                }
-                walkedHalfedges.insert(currHe);
-            } while(currHe != halfedge(iHe));
+        // Skip if this halfedge has a twin (not a boundary halfedge)
+        if(halfedge(iHe)->twin != nullptr) {
+            continue;
         }
+
+        // Skip if we've already processed this boundary halfedge
+        if(walkedHalfedges.find(halfedge(iHe).ptr) != walkedHalfedges.end()) {
+            continue;
+        }
+
+        // Found a new boundary loop, count it and walk around it
+        nBoundaryLoops++;
+        HalfedgePtr currHe = halfedge(iHe);
+        HalfedgePtr startHe = currHe;
+
+        // Safety counter to prevent infinite loops
+        size_t maxIterations = nHalfedges() * 2;
+        size_t iterCount = 0;
+
+        do {
+            walkedHalfedges.insert(currHe.ptr);
+
+            // Move to next boundary halfedge by walking around the vertex
+            currHe = currHe->next;
+            while(currHe->twin != nullptr) {
+                currHe = currHe->twin->next;
+
+                // Safety check: prevent infinite loop
+                iterCount++;
+                if(iterCount > maxIterations) {
+                    throw std::runtime_error("Infinite loop detected in boundary walking algorithm");
+                }
+            }
+        } while(currHe != startHe);
     }
     rawBoundaryLoops.resize(nBoundaryLoops);
 
@@ -435,12 +457,17 @@ HalfedgeMesh::HalfedgeMesh(const PolygonSoupMesh& input, Geometry<Euclidean>*& g
             // Create a boundary loop for this hole
             BoundaryPtr boundaryLoop { &rawBoundaryLoops[iBoundaryLoop] };
             boundaryLoop->isReal = false;
-            
+
 
             // Walk around the boundary loop, creating imaginary halfedges
             HalfedgePtr currHe = halfedge(iHe);
             HalfedgePtr prevHe { nullptr };
             bool finished = false;
+
+            // Safety counter to prevent infinite loops
+            size_t maxIterations = nHalfedges() * 2;
+            size_t iterCount = 0;
+
             while(!finished) {
 
                 // Create a new, imaginary halfedge
@@ -448,7 +475,7 @@ HalfedgeMesh::HalfedgeMesh(const PolygonSoupMesh& input, Geometry<Euclidean>*& g
                 boundaryLoop->halfedge = newHe.ptr;
                 iImaginaryHalfedge++;
 
-                // Connect up pointers 
+                // Connect up pointers
                 newHe->isReal = false;
                 newHe->twin = currHe.ptr;
                 currHe->twin = newHe.ptr;
@@ -483,12 +510,18 @@ HalfedgeMesh::HalfedgeMesh(const PolygonSoupMesh& input, Geometry<Euclidean>*& g
                     }
 
                     currHe = currHe->twin->next;
-                    
+
+                    // Safety check: prevent infinite loop
+                    iterCount++;
+                    if(iterCount > maxIterations) {
+                        throw std::runtime_error("Infinite loop detected in boundary construction algorithm");
+                    }
+
                 }
 
             }
-                
-            // As noted above, the pointers don't get set properly on the first iteration of 
+
+            // As noted above, the pointers don't get set properly on the first iteration of
             // the loop above because we don't have a reference to prev yet. Fix that here.
             halfedge(iHe)->twin->next = prevHe->twin;
 
@@ -498,45 +531,64 @@ HalfedgeMesh::HalfedgeMesh(const PolygonSoupMesh& input, Geometry<Euclidean>*& g
     }
 
     std::cout << "    and " << nBoundaryLoops << " boundary components. " << std::endl;
-    
+
     // When in debug mode, mesh elements know what mesh they are a part of so
     // we can do assertions for saftey checks.
 #ifndef NDEBUG
+    std::cout << "Setting parent mesh pointers (debug mode)..." << std::endl;
+    std::cout << "  Setting halfedges (total: " << nHalfedges() << ")..." << std::endl;
+    size_t count = 0;
     for(HalfedgePtr x : halfedges()) {
         x->parentMesh = this;
+        count++;
+        if (count % 1000 == 0) {
+            std::cout << "    Processed " << count << " halfedges..." << std::endl;
+        }
     }
+    std::cout << "  Finished setting " << count << " halfedges." << std::endl;
+    std::cout << "  Setting imaginary halfedges..." << std::endl;
     for(HalfedgePtr x : imaginaryHalfedges()) {
         x->parentMesh = this;
     }
+    std::cout << "  Setting vertices..." << std::endl;
     for(VertexPtr x : vertices()) {
         x->parentMesh = this;
     }
+    std::cout << "  Setting edges..." << std::endl;
     for(EdgePtr x : edges()) {
         x->parentMesh = this;
     }
+    std::cout << "  Setting faces..." << std::endl;
     for(FacePtr x : faces()) {
         x->parentMesh = this;
     }
+    std::cout << "  Setting boundary loops..." << std::endl;
     for(FacePtr x : boundaryLoops()) {
         x->parentMesh = this;
     }
+    std::cout << "  Parent mesh pointers set." << std::endl;
 #endif
     
     // === 3. Map vertices in the halfedge mesh to the associated vertex coordinates in space
     // Create the vertex objects and build a map to find them
+    std::cout << "Creating geometry object..." << std::endl;
     size_t iVert = 0;
     geometry = new Geometry<Euclidean>(*this);
+    std::cout << "Geometry object created, copying vertex positions..." << std::endl;
     for(size_t i = 0; i < input.vertexCoordinates.size(); i++) {
         if(usedVerts[i]) {
             geometry->position( vertex(iVert) ) = input.vertexCoordinates[i];
             iVert++;
         }
     }
+    std::cout << "Vertex positions copied." << std::endl;
 
     cout << "Construction took " << pretty_time(FINISH_TIMING(construction)) << endl;
 
-    // Compute some basic information about the mesh 
+    // Compute some basic information about the mesh
+    std::cout << "Caching mesh information..." << std::endl;
     cacheInfo();
+    std::cout << "Caching complete." << std::endl;
 }
 
 bool Edge::flip() {

@@ -89,7 +89,7 @@ namespace GC
             // converts this matrix to its real representation
             // (currently only defined for quaternionic matrices)
             
-            SparseMatrix<Quaternion> toQuaternionic();
+            SparseMatrix<::Quaternion> toQuaternionic();
             // converts this matrix to its quaternionic representation
             // (currently only defined for real matrices)
             

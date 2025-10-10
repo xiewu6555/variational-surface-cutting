@@ -1,6 +1,7 @@
 # ADDED BY NICK (code things)
 *.pyc
 build_debug/
+build/
 
 # ADDED BY NICK (editor things)
 *.swp
@@ -38,3 +39,9 @@ compile_commands.json
 *.app
 
 .DS_Store
+/docs/
+/vcpkg-local/
+/vcpkg_installed/
+.idea
+nul
+vcpkg.json

@@ -81,6 +81,14 @@ inline bool Vector3::operator!=(const Vector3 &other) const {
     return !(*this == other);
 }
 
+inline bool Vector3::operator<(const Vector3 &other) const {
+    if (x < other.x) return true;
+    if (x > other.x) return false;
+    if (y < other.y) return true;
+    if (y > other.y) return false;
+    return z < other.z;
+}
+
 
 namespace std {
     inline std::size_t std::hash<Vector3>::operator()(const Vector3& v) const

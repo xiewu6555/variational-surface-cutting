@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.9)
+cmake_minimum_required(VERSION 3.10)
 
 # Collect all .cpp files in the subdirectories
 #file(GLOB_RECURSE VIEWER_SRCS *.cpp)
@@ -29,7 +29,7 @@ endif()
 set(SUB_GUI_LIBRARIES "") # variable used to accumulate target names
 
 
-LIST(APPEND SUB_GUI_LIBRARIES "cuts-gui")
+# LIST(APPEND SUB_GUI_LIBRARIES "cuts-gui")  # 暂时禁用，依赖SuiteSparse
 
 
 ### Create an executable for the gui

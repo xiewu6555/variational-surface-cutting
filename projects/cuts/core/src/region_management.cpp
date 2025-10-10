@@ -5,7 +5,9 @@
 #include "polygon_soup_mesh.h"
 #include "target_edge_lengths.h"
 #include "developable_approximation.h"
+#ifdef HAVE_SUITESPARSE
 #include "fast_cholesky.h"
+#endif
 #include "bff.h"
 #include "boundary_constraints.h"
 #include "fast_marching_method.h"
@@ -1067,8 +1069,10 @@ VertexData<double> yamabeScaleFactors(Geometry<Euclidean>* geom) {
     }
 
     // Allocate the Cholesky matrix and right hand side
+#ifdef HAVE_SUITESPARSE
     FastCholesky interiorLaplacian(nInterior);
     interiorLaplacian.reserveColumns(degreeEst);
+#endif
     
 
     // Useful values
@@ -1094,6 +1098,7 @@ VertexData<double> yamabeScaleFactors(Geometry<Euclidean>* geom) {
             throw std::runtime_error("Bad cotan weight");
         }
 
+#ifdef HAVE_SUITESPARSE
         if(indA != INVALID_IND) {
             interiorLaplacian.addValue(indA, indA, w);
         }
@@ -1104,9 +1109,12 @@ VertexData<double> yamabeScaleFactors(Geometry<Euclidean>* geom) {
             interiorLaplacian.addValue(indA, indB, -w);
             interiorLaplacian.addValue(indB, indA, -w);
         }
+#endif
     }
+#ifdef HAVE_SUITESPARSE
     interiorLaplacian.shiftDiagonal(1e-4);
     interiorLaplacian.factor();
+#endif
 
     // Integrate to get the RHS
     GC::DenseVector<double> rhs(nInterior);
@@ -1138,7 +1146,15 @@ VertexData<double> yamabeScaleFactors(Geometry<Euclidean>* geom) {
     }
 
     // Solve
+#ifdef HAVE_SUITESPARSE
     GC::DenseVector<double> u = interiorLaplacian.solve(rhs);
+#else
+    // Fallback: use identity scaling when SuiteSparse not available
+    GC::DenseVector<double> u(nInterior);
+    for(size_t i = 0; i < nInterior; i++) {
+        u(i) = 0.0;  // exp(0) = 1, so this gives identity scaling
+    }
+#endif
 
     VertexData<double> scaleFactors(mesh);
     for(VertexPtr v : mesh->vertices()) {

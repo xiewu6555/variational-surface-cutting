@@ -25,6 +25,7 @@ struct Vector3 {
     Vector3& operator/=(const double &s);
     bool operator==(const Vector3 &v) const;
     bool operator!=(const Vector3 &v) const;
+    bool operator<(const Vector3 &v) const;
     const Vector3 operator-() const;
 
     // Other functions

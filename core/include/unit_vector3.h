@@ -17,7 +17,7 @@ class UnitVector3 : public Vector3 {
 };
 
 inline double angle(UnitVector3& u0, UnitVector3& u1) {
-   return ::acos( clamp( dot(u0, u1), -1., 1. ));
+   return ::acos( gcClamp( dot(u0, u1), -1., 1. ));
 }
 
 UnitVector3 interpolate(UnitVector3& u0, UnitVector3& u1, double t);

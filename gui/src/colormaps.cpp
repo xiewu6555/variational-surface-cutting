@@ -12,7 +12,7 @@ Vector3 Colormap::getValue(double val) const {
         return Vector3 {0,0,0};
     }
 
-    val = clamp(val, 0.0, 1.0);
+    val = gcClamp(val, 0.0, 1.0);
 
     // Find the two nearest indices in to the colormap lookup table, then
     // return a linear blend between them.

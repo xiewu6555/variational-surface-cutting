@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 2.8.9)
+cmake_minimum_required(VERSION 3.10)
 
 add_subdirectory(flatten)
-add_subdirectory(cuts)
+# add_subdirectory(cuts)  # 暂时禁用，需要SuiteSparse
+add_subdirectory(surface-texture-mapping)
 

@@ -1,0 +1,57 @@
+# 独立ImGui GUI项目 - 避免与nanogui冲突
+cmake_minimum_required(VERSION 3.10)
+
+project(SurfaceTextureMappingGui)
+
+# C++17标准
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 查找所有依赖包（仅使用vcpkg版本）
+find_package(Eigen3 CONFIG REQUIRED)
+find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
+find_package(Threads REQUIRED)
+
+# 包含目录
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../deps/geometry-central/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../deps/glm
+)
+
+# 创建独立的ImGui GUI可执行文件
+add_executable(imgui_surface_gui
+    src/imgui_gui_main.cpp
+    src/imgui_texture_mapping_gui_minimal.cpp
+)
+
+# 设置编译定义以避免ImGui版本冲突
+target_compile_definitions(imgui_surface_gui PRIVATE
+    IMGUI_IMPL_OPENGL_LOADER_GLEW=1
+)
+
+# 链接库 - 仅使用vcpkg版本，避免nanogui GLFW
+target_link_libraries(imgui_surface_gui
+    Eigen3::Eigen
+    ${OPENGL_LIBRARIES}
+    GLEW::GLEW
+    glfw
+    imgui::imgui
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
+# 编译选项
+if(MSVC)
+    target_compile_options(imgui_surface_gui PRIVATE /W4)
+else()
+    target_compile_options(imgui_surface_gui PRIVATE -Wall -Wextra -pedantic)
+endif()
+
+# 复制数据文件到构建目录
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/../../../data/
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/data/)

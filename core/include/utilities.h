@@ -46,8 +46,8 @@ namespace std {
 }
 
 // Various functions
-template<typename T> T clamp(T val, T low, T high);
-Vector3 clamp(Vector3 val, Vector3 low, Vector3 high);
+template<typename T> T gcClamp(T val, T low, T high);
+Vector3 gcClamp(Vector3 val, Vector3 low, Vector3 high);
 template<typename T> bool approxEqualsAbsolute(T a, T b, double eps=1e-6);
 double regularizeAngle(double theta); // Map theta in to [0,2pi)
 
@@ -57,15 +57,15 @@ T sqr( T x ) { return x*x; }
 
 
 // === Inline implementations
-template<typename T> inline T clamp(T val, T low, T high) {
+template<typename T> inline T gcClamp(T val, T low, T high) {
     if(val > high) return high;
     if(val < low) return low;
     return val;
 }
-inline Vector3 clamp(Vector3 val, Vector3 low, Vector3 high) {
-    double x = clamp(val.x, low.x, high.x);
-    double y = clamp(val.y, low.y, high.y);
-    double z = clamp(val.z, low.z, high.z);
+inline Vector3 gcClamp(Vector3 val, Vector3 low, Vector3 high) {
+    double x = gcClamp(val.x, low.x, high.x);
+    double y = gcClamp(val.y, low.y, high.y);
+    double z = gcClamp(val.z, low.z, high.z);
     return Vector3{x,y,z};
 }
 

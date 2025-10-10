@@ -5,6 +5,8 @@
 #include <cmath>
 #include <algorithm>
 #include <limits>
+
+#include <utilities.h>
  
 #include <shaders.h>
 #include <shaders/shiny_shaders.h>
@@ -706,7 +708,7 @@ void SceneMesh::setColorFromRGB(VertexData<Vector3> const &colorData) {
         HalfedgePtr he = f.halfedge();
         for(unsigned int j = 0; j < 3; j++) {
             VertexPtr v = he.vertex();
-            colors[3*i+j] = clamp(colorData[v], Vector3{0,0,0}, Vector3{1,1,1});
+            colors[3*i+j] = gcClamp(colorData[v], Vector3{0,0,0}, Vector3{1,1,1});
             he = he.next();
         }
         i++;
@@ -729,7 +731,7 @@ void SceneMesh::setColorFromRGB(FaceData<Vector3> const &colorData)
     for (FacePtr f : mesh->faces()) {
         HalfedgePtr he = f.halfedge();
         for (unsigned int j = 0; j < 3; j++) {
-            colors[3*i+j] = clamp(colorData[f], Vector3{0,0,0}, Vector3{1,1,1});
+            colors[3*i+j] = gcClamp(colorData[f], Vector3{0,0,0}, Vector3{1,1,1});
             he = he.next();
         }
         i++;
@@ -752,10 +754,10 @@ void SceneMesh::setColorFromRGB(CornerData<Vector3> const &colorData)
     for (FacePtr f: mesh->faces()) {
         unsigned j = 0;
         for (CornerPtr c: f.adjacentCorners()) {
-            for (unsigned int k = 0; k < 3; k++) colors[18*i+6*j+k] = clamp(colorData[c],
+            for (unsigned int k = 0; k < 3; k++) colors[18*i+6*j+k] = gcClamp(colorData[c],
                                                                             Vector3{0,0,0},
                                                                             Vector3{1,1,1});
-            for (unsigned int k = 0; k < 3; k++) colors[18*i+6*j+3+k] = clamp(colorData[c.next()],
+            for (unsigned int k = 0; k < 3; k++) colors[18*i+6*j+3+k] = gcClamp(colorData[c.next()],
                                                                               Vector3{0,0,0},
                                                                               Vector3{1,1,1});
             j++;
@@ -781,7 +783,7 @@ void SceneMesh::setColorFromRGB(EdgeData<Vector3> const &colorData)
     for (FacePtr f: mesh->faces()) {
         unsigned int j = 0;
         for (HalfedgePtr h: f.adjacentHalfedges()) {
-            for (unsigned int k = 0; k < 3; k++) colors[9*i+3*j+k] = clamp(colorData[h.edge()],
+            for (unsigned int k = 0; k < 3; k++) colors[9*i+3*j+k] = gcClamp(colorData[h.edge()],
                                                                            Vector3{0,0,0},
                                                                            Vector3{1,1,1});
             j++;

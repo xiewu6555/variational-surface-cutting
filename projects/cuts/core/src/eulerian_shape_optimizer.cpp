@@ -257,14 +257,35 @@ void EulerianShapeOptimizer::doStep() {
 
     cerr << endl << endl << "=== Stepping iteration " << iIter << endl;
 
+    cout << "[DEBUG doStep] Starting iteration " << iIter << endl;
+    cout.flush();
+
+    cout << "[DEBUG doStep] About to compute initial energy..." << endl;
+    cout.flush();
     double initEnergy = computeEnergy(true);
+    cout << "[DEBUG doStep] Initial energy computed: " << initEnergy << endl;
 
+    cout << "[DEBUG doStep] Building gradient at boundary..." << endl;
+    cout.flush();
     buildGradientAtBoundary();
-    VertexData<LabelVec> surfaceGradient = extendGradientToSurface();
-    //double slope = computeGradientSlope();
-    takeGradientStep(surfaceGradient, stepSizeParam);
+    cout << "[DEBUG doStep] Gradient built" << endl;
 
+    cout << "[DEBUG doStep] Extending gradient to surface..." << endl;
+    cout.flush();
+    VertexData<LabelVec> surfaceGradient = extendGradientToSurface();
+    cout << "[DEBUG doStep] Gradient extended" << endl;
+
+    //double slope = computeGradientSlope();
+    cout << "[DEBUG doStep] Taking gradient step..." << endl;
+    cout.flush();
+    takeGradientStep(surfaceGradient, stepSizeParam);
+    cout << "[DEBUG doStep] Gradient step taken" << endl;
+
+    cout << "[DEBUG doStep] Computing final energy..." << endl;
+    cout.flush();
     double energy = computeEnergy(true);
+    cout << "[DEBUG doStep] Final energy computed: " << energy << endl;
+
     double deltaT = stepSizeParam * lengthScale * lengthScale * lengthScale / 1000;
     //double observedSlope = (initEnergy - energy) / deltaT;
 
@@ -274,14 +295,15 @@ void EulerianShapeOptimizer::doStep() {
 
     // for space filling
     if(spaceFillingCurveMode) {
-        // weightDirichletDistortion *= 1.00391968; 
-        // weightHenckyDistortion *= 1.00391968; 
+        // weightDirichletDistortion *= 1.00391968;
+        // weightHenckyDistortion *= 1.00391968;
         weightDirichletDistortion *= 1.005;
         weightHenckyDistortion *= 1.005;
     }
 
 
     iIter++;
+    cout << "[DEBUG doStep] doStep completed successfully" << endl;
 }
 
 
@@ -373,17 +395,41 @@ void EulerianShapeOptimizer::ensureHaveTriangleSoupCutMeshes() {
 
     if(haveTriangleSoupCutMeshes) return;
 
-    // Dependencies:
-    ensureHaveBoundaryGeometry();
-    ensureHaveConnectedComponents();
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Starting..." << endl;
+    cout.flush();
 
+    // Dependencies:
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Ensuring boundary geometry..." << endl;
+    cout.flush();
+    ensureHaveBoundaryGeometry();
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Boundary geometry ready" << endl;
+
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Ensuring connected components..." << endl;
+    cout.flush();
+    ensureHaveConnectedComponents();
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Connected components ready" << endl;
+
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Extracting cut meshes..." << endl;
+    cout.flush();
     extractCutMeshes();
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Cut meshes extracted" << endl;
+
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Building patch meshes..." << endl;
+    cout.flush();
     buildPatchMeshes();
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Patch meshes built" << endl;
+
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Copying feature size..." << endl;
+    cout.flush();
     copyFeatureSizeToPatchMeshes();
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Feature size copied" << endl;
 
     haveTriangleSoupCutMeshes = true;
-    
+
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Initializing boundary gradient..." << endl;
+    cout.flush();
     initializeBoundaryGradient(); // needs to be allocated after cut mesh is extracted,
+    cout << "[DEBUG ensureHaveTriangleSoupCutMeshes] Completed successfully" << endl;
 }
 
 void EulerianShapeOptimizer::ensureHaveYamabeSolution() {
@@ -395,7 +441,7 @@ void EulerianShapeOptimizer::ensureHaveYamabeSolution() {
 
     solveYamabeProblems(); 
 
-    haveYamabeSolution = false;
+    haveYamabeSolution = true;  // BUGFIX: was incorrectly set to false
 }
     
     
@@ -1247,21 +1293,126 @@ void EulerianShapeOptimizer::copyFeatureSizeToPatchMeshes() {
 
 void EulerianShapeOptimizer::solveYamabeProblems() {
 
-    #pragma omp parallel for
+    cout << "[DEBUG solveYamabeProblems] Starting Yamabe problem solving for " << patches.size() << " patches" << endl;
+    cout.flush();
+
+    // 打印所有patches的状态
     for(size_t iP = 0; iP < patches.size(); iP++) {
         SurfacePatch* p = patches[iP];
-        p->solveYamabeProblem();
+        cout << "[DEBUG solveYamabeProblems] Patch " << iP << " state check:" << endl;
+        cout << "  - nVert: " << p->nVert << endl;
+        cout << "  - nTri: " << p->nTri << endl;
+        cout << "  - nBoundaryVertices: " << p->nBoundaryVertices << endl;
+        cout << "  - iRegion: " << p->iRegion << endl;
+        cout << "  - distortion.size(): " << p->distortion.size() << endl;
+        cout << "  - soupMesh.vertices.size(): " << p->soupMesh.vertices.size() << endl;
+        cout << "  - soupMesh.geometryCached: " << p->soupMesh.geometryCached << endl;
+        cout.flush();
+    }
+
+    #pragma omp parallel for  // 测试: 恢复OpenMP以验证是否真的是线程安全问题
+    for(size_t iP = 0; iP < patches.size(); iP++) {
+        int thread_id = 0;
+        #ifdef _OPENMP
+        thread_id = omp_get_thread_num();
+        #endif
+
+        SurfacePatch* p = patches[iP];
+
+        #pragma omp critical
+        {
+            cout << "[DEBUG solveYamabeProblems] Thread " << thread_id
+                 << " processing patch " << iP << endl;
+            cout.flush();
+        }
+
+        // 防御性检查：在调用前验证数据完整性
+        if(p->nVert == 0) {
+            #pragma omp critical
+            {
+                cerr << "[ERROR] Patch " << iP << " has nVert=0, skipping!" << endl;
+            }
+            continue;
+        }
+
+        if(p->soupMesh.vertices.size() != p->nVert) {
+            #pragma omp critical
+            {
+                cerr << "[ERROR] Patch " << iP << " vertex size mismatch: "
+                     << "soupMesh.vertices.size()=" << p->soupMesh.vertices.size()
+                     << " vs nVert=" << p->nVert << endl;
+            }
+            continue;
+        }
+
+        // 调用Yamabe求解器
+        try {
+            #pragma omp critical
+            {
+                cout << "[DEBUG solveYamabeProblems] Thread " << thread_id
+                     << " calling solveYamabeProblem for patch " << iP << endl;
+                cout.flush();
+            }
+
+            p->solveYamabeProblem();
+
+            #pragma omp critical
+            {
+                cout << "[DEBUG solveYamabeProblems] Thread " << thread_id
+                     << " completed solveYamabeProblem for patch " << iP << endl;
+                cout.flush();
+            }
+
+        } catch(const std::exception& e) {
+            #pragma omp critical
+            {
+                cerr << "[ERROR] Thread " << thread_id << " caught exception in patch " << iP
+                     << ": " << e.what() << endl;
+            }
+            throw;  // 重新抛出以停止程序
+        }
+
+        // 立即验证结果
+        #pragma omp critical
+        {
+            cout << "[DEBUG solveYamabeProblems] Thread " << thread_id
+                 << " verifying distortion for patch " << iP << endl;
+            cout << "  - distortion.size() after solve: " << p->distortion.size() << endl;
+            cout.flush();
+        }
+
+        if(p->distortion.size() != p->nVert) {
+            #pragma omp critical
+            {
+                cerr << "[ERROR] Patch " << iP << " distortion size mismatch after solve!" << endl;
+                cerr << "  Expected: " << p->nVert << ", Got: " << p->distortion.size() << endl;
+            }
+        }
 
 #ifdef SAFETY_CHECKS
         for(size_t i = 0; i < p->soupMesh.vertices.size(); i++) {
             double u = p->distortion[i];
             if(!std::isfinite(u)) {
+                #pragma omp critical
+                {
+                    cerr << "[ERROR] Non-finite distortion value at patch " << iP
+                         << ", vertex " << i << ": " << u << endl;
+                }
                 invalidValuePanic("solveYamabeProblems()");
             }
         }
 #endif
 
+        #pragma omp critical
+        {
+            cout << "[DEBUG solveYamabeProblems] Thread " << thread_id
+                 << " finished all checks for patch " << iP << endl;
+            cout.flush();
+        }
     }
+
+    cout << "[DEBUG solveYamabeProblems] All Yamabe problems solved successfully" << endl;
+    cout.flush();
 
 }
 
@@ -1408,7 +1559,7 @@ void EulerianShapeOptimizer::addBoundaryGradientTermDirichletDistortion() {
         }
 
     } else {
-        #pragma omp parallel for
+        // #pragma omp parallel for  // BUGFIX 2025-10-10: 禁用OpenMP（调用线性求解器）
         for(size_t iP = 0; iP < patches.size(); iP++) {
             SurfacePatch* p = patches[iP];
             p->addDirichletDistortionGradient(weightDirichletDistortion, localScaleDirichletDistortion);
@@ -1968,7 +2119,7 @@ void EulerianShapeOptimizer::takeGradientStep(VertexData<LabelVec> gradient, dou
 
 
     // Take an implicit step of the regularizer (for each region)
-    #pragma omp parallel for
+    // #pragma omp parallel for  // BUGFIX 2025-10-10: 禁用OpenMP（调用线性求解器solveSquare）
     for(int iRegion = 0; iRegion < K_REGIONS; iRegion++) {
 
         // Implicit stepping
@@ -2467,15 +2618,43 @@ void EulerianShapeOptimizer::computeExtrinsicDevelopableMesh() {
 // Precondition: All values (u, regions, etc) must be accurate
 double EulerianShapeOptimizer::computeEnergy(bool print) {
 
-    double E_length = weightLengthRegularization * evaluateEnergyTermLengthRegularization();
-    double E_dirichletDistortion = weightDirichletDistortion * evaluateEnergyTermDirichletDistortion();
-    double E_henckyDistortion = 1000 * weightHenckyDistortion * evaluateEnergyTermHenckyDistortion();
-    double E_area = weightArea * evaluateEnergyTermArea();
-    double E_visibility = weightVisibility * evaluateEnergyTermVisibility();
-    double E_normalDeviation = weightNormalDeviation * evaluateEnergyTermNormalDeviation();
+    cout << "[DEBUG computeEnergy] Starting energy computation..." << endl;
+    cout.flush();
 
-    double energy = E_length + E_dirichletDistortion + E_henckyDistortion + 
+    cout << "[DEBUG computeEnergy] Evaluating length regularization..." << endl;
+    cout.flush();
+    double E_length = weightLengthRegularization * evaluateEnergyTermLengthRegularization();
+    cout << "[DEBUG computeEnergy] E_length = " << E_length << endl;
+
+    cout << "[DEBUG computeEnergy] Evaluating Dirichlet distortion..." << endl;
+    cout.flush();
+    double E_dirichletDistortion = weightDirichletDistortion * evaluateEnergyTermDirichletDistortion();
+    cout << "[DEBUG computeEnergy] E_dirichletDistortion = " << E_dirichletDistortion << endl;
+
+    cout << "[DEBUG computeEnergy] Evaluating Hencky distortion..." << endl;
+    cout.flush();
+    double E_henckyDistortion = 1000 * weightHenckyDistortion * evaluateEnergyTermHenckyDistortion();
+    cout << "[DEBUG computeEnergy] E_henckyDistortion = " << E_henckyDistortion << endl;
+
+    cout << "[DEBUG computeEnergy] Evaluating area..." << endl;
+    cout.flush();
+    double E_area = weightArea * evaluateEnergyTermArea();
+    cout << "[DEBUG computeEnergy] E_area = " << E_area << endl;
+
+    cout << "[DEBUG computeEnergy] Evaluating visibility..." << endl;
+    cout.flush();
+    double E_visibility = weightVisibility * evaluateEnergyTermVisibility();
+    cout << "[DEBUG computeEnergy] E_visibility = " << E_visibility << endl;
+
+    cout << "[DEBUG computeEnergy] Evaluating normal deviation..." << endl;
+    cout.flush();
+    double E_normalDeviation = weightNormalDeviation * evaluateEnergyTermNormalDeviation();
+    cout << "[DEBUG computeEnergy] E_normalDeviation = " << E_normalDeviation << endl;
+
+    double energy = E_length + E_dirichletDistortion + E_henckyDistortion +
                     E_area + E_visibility + E_normalDeviation;
+
+    cout << "[DEBUG computeEnergy] Total energy = " << energy << endl;
 
     // Write actual energy values
     // if(PLOT_ENERGY && print) {
@@ -2485,7 +2664,7 @@ double EulerianShapeOptimizer::computeEnergy(bool print) {
     //          << E_henckyDistortion << ","
     //          << E_area << ","
     //          << E_visibility << ","
-    //          << E_normalDeviation 
+    //          << E_normalDeviation
     //          << endl;
     // }
 
@@ -2497,10 +2676,11 @@ double EulerianShapeOptimizer::computeEnergy(bool print) {
              << E_henckyDistortion/weightHenckyDistortion << ","
              << E_area/weightArea << ","
              << E_visibility/weightVisibility << ","
-             << E_normalDeviation/weightNormalDeviation 
+             << E_normalDeviation/weightNormalDeviation
              << endl;
     }
-    
+
+    cout << "[DEBUG computeEnergy] Energy computation completed" << endl;
 
     return energy;
 }
@@ -2543,15 +2723,56 @@ double EulerianShapeOptimizer::evaluateEnergyTermDirichletDistortion() {
 }
 
 double EulerianShapeOptimizer::evaluateEnergyTermHenckyDistortion() {
-    
-    if(weightHenckyDistortion == 0.0) return 0.0;
-    
+
+    if(weightHenckyDistortion == 0.0) {
+        cout << "[DEBUG evaluateEnergyTermHenckyDistortion] Weight is zero, returning 0" << endl;
+        return 0.0;
+    }
+
+    cout << "[DEBUG evaluateEnergyTermHenckyDistortion] Calling ensureHaveYamabeSolution()..." << endl;
+    cout.flush();
+
     ensureHaveYamabeSolution();
 
+    cout << "[DEBUG evaluateEnergyTermHenckyDistortion] ensureHaveYamabeSolution() completed" << endl;
+    cout << "[DEBUG evaluateEnergyTermHenckyDistortion] Computing energy for " << patches.size() << " patches..." << endl;
+    cout.flush();
+
     double E = 0;
-    for(SurfacePatch* p : patches) {
-        E += p->computeHenckyDistortionEnergy();
+    for(size_t iP = 0; iP < patches.size(); iP++) {
+        SurfacePatch* p = patches[iP];
+
+        cout << "[DEBUG evaluateEnergyTermHenckyDistortion] Processing patch " << iP << endl;
+        cout << "  - nVert: " << p->nVert << endl;
+        cout << "  - distortion.size(): " << p->distortion.size() << endl;
+        cout << "  - soupMesh.dualArea.size(): " << p->soupMesh.dualArea.size() << endl;
+        cout.flush();
+
+        // 防御性检查
+        if(p->distortion.size() != p->nVert) {
+            cerr << "[CRITICAL ERROR] Patch " << iP << " distortion size mismatch!" << endl;
+            cerr << "  Expected: " << p->nVert << ", Got: " << p->distortion.size() << endl;
+            throw std::runtime_error("distortion size mismatch in evaluateEnergyTermHenckyDistortion");
+        }
+
+        if(p->soupMesh.dualArea.size() != p->nVert) {
+            cerr << "[CRITICAL ERROR] Patch " << iP << " dualArea size mismatch!" << endl;
+            cerr << "  Expected: " << p->nVert << ", Got: " << p->soupMesh.dualArea.size() << endl;
+            throw std::runtime_error("dualArea size mismatch in evaluateEnergyTermHenckyDistortion");
+        }
+
+        try {
+            double patchEnergy = p->computeHenckyDistortionEnergy();
+            cout << "  - Patch energy: " << patchEnergy << endl;
+            E += patchEnergy;
+        } catch(const std::exception& e) {
+            cerr << "[ERROR] Exception computing Hencky energy for patch " << iP << ": " << e.what() << endl;
+            throw;
+        }
     }
+
+    cout << "[DEBUG evaluateEnergyTermHenckyDistortion] Total energy = " << E << endl;
+    cout.flush();
 
     return E;
 }
@@ -3371,6 +3592,17 @@ std::vector<LabelVec> EulerianShapeOptimizer::interpolateToCutMesh(VertexData<La
 
     return interpolatedVals;
 }
+
+// 显式模板实例化：确保 Geometry<Vector3> 和 Geometry<Euclidean> 生成相同的符号
+// 这是为了解决跨编译单元的typedef链接问题
+// 由于 typedef Vector3 Euclidean，这两种写法应该是等价的
+// 但链接器的名称修饰可能在不同编译单元处理不一致
+// 因此我们显式确认这两种类型是完全相同的
+
+// 注意：由于构造函数已经用 Geometry<Euclidean>* 定义，
+// 并且 Euclidean 就是 Vector3 的 typedef，
+// C++ 标准保证这两种类型是完全相同的
+// 如果仍然出现链接错误，说明是编译器/链接器的名称修饰问题
 
 #undef PLOT_ENERGY
 #undef SAFETY_CHECKS

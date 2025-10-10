@@ -12,7 +12,9 @@
 #include <geometry.h>
 
 #include "halfedge_mesh.h"
+#ifdef HAVE_SUITESPARSE
 #include "fast_cholesky.h"
+#endif
 
 typedef std::array<size_t, 3> Tri;
 typedef std::array<bool, 3> TriBool;
@@ -72,7 +74,11 @@ private:
 
     // Cache the interior Laplacian
     bool haveInteriorLaplacian = false;
+#ifdef HAVE_SUITESPARSE
     FastCholesky* interiorLaplacian = nullptr;
+#else
+    void* interiorLaplacian = nullptr;  // Placeholder when SuiteSparse not available
+#endif
     size_t nInterior = 0;
     vector<size_t> interiorInd;
 

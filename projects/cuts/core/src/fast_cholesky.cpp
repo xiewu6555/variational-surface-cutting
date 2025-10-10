@@ -1,5 +1,7 @@
 #include "fast_cholesky.h"
 
+#ifdef HAVE_SUITESPARSE
+
 #include <algorithm>
 #include <numeric>
 
@@ -243,3 +245,5 @@ FastCholesky::~FastCholesky() {
     cholmod_l_finish(&common);
 }
 
+
+#endif // HAVE_SUITESPARSE

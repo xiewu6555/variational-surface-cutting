@@ -31,7 +31,7 @@ VertexData<double> computeAngleDefects(Geometry<Euclidean>* geometry) {
                 Vector3 a = unit(-geometry->vector(he));
                 Vector3 b = unit(-geometry->vector(prevHe));
 
-                double angle = acos(clamp(dot(a,b), -1.0, 1.0)); // clamp to deal with numerical error
+                double angle = acos(gcClamp(dot(a,b), -1.0, 1.0)); // clamp to deal with numerical error
 
                 // acos() can choose the wrong inverse for very sharp angles (only happens with boundary vertices, assuming no triangles are degenerate)
                 if(dot(cross(a,b), geometry->normal(v)) < 0) {
@@ -47,7 +47,7 @@ VertexData<double> computeAngleDefects(Geometry<Euclidean>* geometry) {
         // Do the last one, which we missed above
         Vector3 a = unit(-geometry->vector(v.halfedge().twin()));
         Vector3 b = unit(-geometry->vector(prevHe));
-        double angle = acos(clamp(dot(a,b), -1.0, 1.0)); // clamp to deal with numerical error
+        double angle = acos(gcClamp(dot(a,b), -1.0, 1.0)); // clamp to deal with numerical error
         if(dot(cross(a,b), geometry->normal(v)) < 0) {
             angle = 2*PI - angle;
         }
@@ -91,7 +91,7 @@ HalfedgeData<double> computeRescaledHalfedgeAngles(Geometry<Euclidean>* geometry
                 Vector3 a = unit(-geometry->vector(he));
                 Vector3 b = unit(-geometry->vector(prevHe));
 
-                double angle = acos(clamp(dot(a,b), -1.0, 1.0)); // clamp to deal with numerical error
+                double angle = acos(gcClamp(dot(a,b), -1.0, 1.0)); // clamp to deal with numerical error
 
                 // acos() can choose the wrong inverse for very sharp angles (only happens with boundary vertices)
                 if(dot(cross(a,b), geometry->normal(v)) < 0) {

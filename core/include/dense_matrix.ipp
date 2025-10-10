@@ -447,6 +447,12 @@ namespace GC
    template<typename T>
    T& DenseMatrix<T> :: operator()( size_t row, size_t col )
    {
+#ifndef NDEBUG
+      if(row >= m || col >= n) {
+         std::cerr << "DenseMatrix bounds error: accessing (" << row << ", " << col
+                   << ") in matrix of size (" << m << ", " << n << ")" << std::endl;
+      }
+#endif
       assert(row < m && col < n);
       return data[row+m*col];
    }
@@ -454,6 +460,12 @@ namespace GC
    template<typename T>
    T DenseMatrix<T> :: operator()( size_t row, size_t col ) const
    {
+#ifndef NDEBUG
+      if(row >= m || col >= n) {
+         std::cerr << "DenseMatrix bounds error: accessing (" << row << ", " << col
+                   << ") in matrix of size (" << m << ", " << n << ")" << std::endl;
+      }
+#endif
       assert(row < m && col < n);
       return data[row+m*col];
    }
@@ -461,12 +473,28 @@ namespace GC
    template<typename T>
    T& DenseMatrix<T> :: operator()( size_t index )
    {
+#ifndef NDEBUG
+      if(index >= data.size()) {
+         std::cerr << "DenseMatrix vector bounds error: accessing index " << index
+                   << " in vector of size " << data.size()
+                   << " (matrix is " << m << " x " << n << ")" << std::endl;
+      }
+#endif
+      assert(index < data.size());
       return data[index];
    }
 
    template<typename T>
    T DenseMatrix<T> :: operator()( size_t index ) const
    {
+#ifndef NDEBUG
+      if(index >= data.size()) {
+         std::cerr << "DenseMatrix vector bounds error: accessing index " << index
+                   << " in vector of size " << data.size()
+                   << " (matrix is " << m << " x " << n << ")" << std::endl;
+      }
+#endif
+      assert(index < data.size());
       return data[index];
    }
 

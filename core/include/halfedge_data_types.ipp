@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+#include <stdexcept>
 #include "halfedge_data_macros.h"
 
 // === Implementations for datatypes which hold data stored on the mesh
@@ -22,9 +24,16 @@ VertexData<T>::VertexData(HalfedgeMesh* parentMesh, T initVal)
 }
 
 template<typename T>
-VertexData<T>::VertexData(HalfedgeMesh* parentMesh, const GC::DenseMatrix<T>& vector) 
+VertexData<T>::VertexData(HalfedgeMesh* parentMesh, const GC::DenseMatrix<T>& vector)
     : VertexData(parentMesh)
 {
+    // Validate vector size before attempting to construct
+    if (parentMesh != nullptr && vector.nRows() != parentMesh->nVertices()) {
+        throw std::runtime_error("VertexData constructor: vector size " +
+                                 std::to_string(vector.nRows()) +
+                                 " does not match mesh vertex count " +
+                                 std::to_string(parentMesh->nVertices()));
+    }
     fromVector(vector);
 }
 
@@ -65,9 +74,19 @@ GC::DenseMatrix<T> VertexData<T>::toVector(const VertexData<size_t>& indexer) co
 
 template<typename T>
 void VertexData<T>::fromVector(const GC::DenseMatrix<T>& vector) {
-    if(vector.nRows() != mesh->nVertices()) throw std::runtime_error("Vector size does not match mesh size.");
+    if(vector.nRows() != mesh->nVertices()) {
+        std::string errorMsg = "Vector size does not match mesh size. Expected " +
+                               std::to_string(mesh->nVertices()) +
+                               " but got " + std::to_string(vector.nRows());
+        throw std::runtime_error(errorMsg);
+    }
     VertexData<size_t> ind = mesh->getVertexIndices();
     for(VertexPtr v : mesh->vertices()) {
+        if(ind[v] >= vector.nRows()) {
+            throw std::runtime_error("Vertex index out of bounds: " +
+                                     std::to_string(ind[v]) + " >= " +
+                                     std::to_string(vector.nRows()));
+        }
         (*this)[v] = vector(ind[v]) ;
     }
 }

@@ -31,8 +31,11 @@ inline size_t HalfedgeDual::nFaces     (void) const { return     rawFaces.size()
 inline HalfedgePtrSet HalfedgeMesh::halfedges(void) {
 
    size_t nH = rawHalfedges.size();
-   HalfedgePtr beginptr(&rawHalfedges[0]);
-   HalfedgePtr endptr(&rawHalfedges[nH]); // note that we really want nH and not nH-1, since we want the address one past the final element
+   if (nH == 0) {
+       return HalfedgePtrSet(HalfedgePtr(), HalfedgePtr());
+   }
+   HalfedgePtr beginptr(rawHalfedges.data());
+   HalfedgePtr endptr(rawHalfedges.data() + nH); // safe "one past the end" pointer
 
    return HalfedgePtrSet(beginptr, endptr);
 }
@@ -40,8 +43,11 @@ inline HalfedgePtrSet HalfedgeMesh::halfedges(void) {
 inline HalfedgePtrSet HalfedgeMesh::imaginaryHalfedges(void) {
 
    size_t nH = rawImaginaryHalfedges.size();
-   HalfedgePtr beginptr(&rawImaginaryHalfedges[0]);
-   HalfedgePtr endptr(&rawImaginaryHalfedges[nH]);
+   if (nH == 0) {
+       return HalfedgePtrSet(HalfedgePtr(), HalfedgePtr());
+   }
+   HalfedgePtr beginptr(rawImaginaryHalfedges.data());
+   HalfedgePtr endptr(rawImaginaryHalfedges.data() + nH);
 
    return HalfedgePtrSet(beginptr, endptr);
 }
@@ -60,19 +66,25 @@ inline CutPtrSet HalfedgeMesh::cutBoundary(int loop) {
 }
 
 inline CornerPtrSet HalfedgeMesh::corners(void) {
-    
+
     size_t nC = rawHalfedges.size();
-    CornerPtr beginptr(&rawHalfedges[0]);
-    CornerPtr endptr(&rawHalfedges[nC]);
-    
+    if (nC == 0) {
+        return CornerPtrSet(CornerPtr(), CornerPtr());
+    }
+    CornerPtr beginptr(rawHalfedges.data());
+    CornerPtr endptr(rawHalfedges.data() + nC);
+
     return CornerPtrSet(beginptr, endptr);
 }
 
 inline VertexPtrSet HalfedgeMesh::vertices(void) {
 
    size_t nV = rawVertices.size();
-   VertexPtr beginptr{&rawVertices[0]};
-   VertexPtr endptr{&rawVertices[nV]};
+   if (nV == 0) {
+       return VertexPtrSet(VertexPtr(), VertexPtr());
+   }
+   VertexPtr beginptr{rawVertices.data()};
+   VertexPtr endptr{rawVertices.data() + nV};
 
    return VertexPtrSet(beginptr, endptr);
 }
@@ -80,8 +92,11 @@ inline VertexPtrSet HalfedgeMesh::vertices(void) {
 inline EdgePtrSet HalfedgeMesh::edges(void) {
 
    size_t nE = rawEdges.size();
-   EdgePtr beginptr{&rawEdges[0]};
-   EdgePtr endptr{&rawEdges[nE]};
+   if (nE == 0) {
+       return EdgePtrSet(EdgePtr(), EdgePtr());
+   }
+   EdgePtr beginptr{rawEdges.data()};
+   EdgePtr endptr{rawEdges.data() + nE};
 
    return EdgePtrSet(beginptr, endptr);
 }
@@ -89,8 +104,11 @@ inline EdgePtrSet HalfedgeMesh::edges(void) {
 inline FacePtrSet HalfedgeMesh::faces(void) {
 
    size_t nF = rawFaces.size();
-   FacePtr beginptr{&rawFaces[0]};
-   FacePtr endptr{&rawFaces[nF]};
+   if (nF == 0) {
+       return FacePtrSet(FacePtr(), FacePtr());
+   }
+   FacePtr beginptr{rawFaces.data()};
+   FacePtr endptr{rawFaces.data() + nF};
 
    return FacePtrSet(beginptr, endptr);
 }
@@ -98,8 +116,11 @@ inline FacePtrSet HalfedgeMesh::faces(void) {
 inline BoundaryPtrSet HalfedgeMesh::boundaryLoops(void) {
 
    size_t nBL = rawBoundaryLoops.size();
-   BoundaryPtr beginptr{&rawBoundaryLoops[0]};
-   BoundaryPtr endptr{&rawBoundaryLoops[nBL]};
+   if (nBL == 0) {
+       return BoundaryPtrSet(BoundaryPtr(), BoundaryPtr());
+   }
+   BoundaryPtr beginptr{rawBoundaryLoops.data()};
+   BoundaryPtr endptr{rawBoundaryLoops.data() + nBL};
 
    return BoundaryPtrSet(beginptr, endptr);
 }
@@ -109,8 +130,11 @@ inline BoundaryPtrSet HalfedgeMesh::boundaryLoops(void) {
 inline DualHalfedgePtrSet HalfedgeDual::halfedges(void) {
 
    size_t ndH = rawHalfedges.size();
-   DualHalfedgePtr beginptr(&rawHalfedges[0]);
-   DualHalfedgePtr endptr(&rawHalfedges[ndH]);
+   if (ndH == 0) {
+       return DualHalfedgePtrSet(DualHalfedgePtr(), DualHalfedgePtr());
+   }
+   DualHalfedgePtr beginptr(rawHalfedges.data());
+   DualHalfedgePtr endptr(rawHalfedges.data() + ndH);
 
    return DualHalfedgePtrSet(beginptr, endptr);
 }
@@ -118,8 +142,11 @@ inline DualHalfedgePtrSet HalfedgeDual::halfedges(void) {
 inline DualVertexPtrSet HalfedgeDual::vertices(void) {
 
    size_t ndV = rawVertices.size();
-   DualVertexPtr beginptr{&rawVertices[0]};
-   DualVertexPtr endptr{&rawVertices[ndV]};
+   if (ndV == 0) {
+       return DualVertexPtrSet(DualVertexPtr(), DualVertexPtr());
+   }
+   DualVertexPtr beginptr{rawVertices.data()};
+   DualVertexPtr endptr{rawVertices.data() + ndV};
 
    return DualVertexPtrSet(beginptr, endptr);
 }
@@ -127,8 +154,11 @@ inline DualVertexPtrSet HalfedgeDual::vertices(void) {
 inline DualEdgePtrSet HalfedgeDual::edges(void) {
 
    size_t ndE = rawEdges.size();
-   DualEdgePtr beginptr{&rawEdges[0]};
-   DualEdgePtr endptr{&rawEdges[ndE]};
+   if (ndE == 0) {
+       return DualEdgePtrSet(DualEdgePtr(), DualEdgePtr());
+   }
+   DualEdgePtr beginptr{rawEdges.data()};
+   DualEdgePtr endptr{rawEdges.data() + ndE};
 
    return DualEdgePtrSet(beginptr, endptr);
 }
@@ -136,8 +166,11 @@ inline DualEdgePtrSet HalfedgeDual::edges(void) {
 inline DualFacePtrSet HalfedgeDual::faces(void) {
 
    size_t ndF = rawFaces.size();
-   DualFacePtr beginptr{&rawFaces[0]};
-   DualFacePtr endptr{&rawFaces[ndF]};
+   if (ndF == 0) {
+       return DualFacePtrSet(DualFacePtr(), DualFacePtr());
+   }
+   DualFacePtr beginptr{rawFaces.data()};
+   DualFacePtr endptr{rawFaces.data() + ndF};
 
    return DualFacePtrSet(beginptr, endptr);
 }

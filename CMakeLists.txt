@@ -1,6 +1,11 @@
-cmake_minimum_required(VERSION 2.8.9)
+cmake_minimum_required(VERSION 3.10)
 
 project(cuts)
+
+### C++ Standard settings
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 ### Policy settings
 cmake_policy(SET CMP0054 NEW)   # don't implicitly dereference inside if()
@@ -114,6 +119,9 @@ endif()
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
   add_definitions (-DNOMINMAX)  # don't use weird windows built-in min/max
   add_definitions (-D_USE_MATH_DEFINES)  # match unix behavior of constants in cmath
+  # Silence C++17 deprecation warnings for older Eigen versions
+  add_definitions (-D_SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING)
+  add_definitions (-D_SILENCE_CXX17_ADAPTOR_TYPEDEFS_DEPRECATION_WARNING)
 endif()
 
 
@@ -154,7 +162,7 @@ set( CMAKE_EXPORT_COMPILE_COMMANDS 1 ) # Emit a compile flags file to support co
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   # using Clang (linux or apple) or GCC
   message("Using clang/gcc compiler flags")
-  SET(BASE_CXX_FLAGS "-std=c++11 -Wall -Wextra -g3")
+  SET(BASE_CXX_FLAGS "-std=c++17 -Wall -Wextra -g3")
   SET(DISABLED_WARNINGS " -Wno-unused-parameter -Wno-unused-variable -Wno-unused-private-field -Wno-unused-function -Wno-deprecated-declarations -Wno-unused-but-set-variable -Wno-maybe-uninitialized -Wno-comment")
   SET(TRACE_INCLUDES " -H -Wno-error=unused-command-line-argument")
 
@@ -196,3 +204,10 @@ add_subdirectory(core)
 add_subdirectory(projects)
 add_subdirectory(gui)
 #add_subdirectory(plugins)
+
+### Test executable for HalfedgeMesh fix verification
+add_executable(test_halfedge_fix test_halfedge_fix.cpp)
+target_link_libraries(test_halfedge_fix core)
+if(SUITESPARSE_FOUND)
+    target_link_libraries(test_halfedge_fix ${SUITESPARSE_LIBRARIES})
+endif()

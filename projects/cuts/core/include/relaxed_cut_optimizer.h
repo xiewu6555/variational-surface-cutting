@@ -6,7 +6,9 @@
 
 #include "utilities.h"
 #include "geometry.h"
+#ifdef HAVE_SUITESPARSE
 #include "fast_cholesky.h"
+#endif
 #include "fast_triangle_soup.h"
 
 
