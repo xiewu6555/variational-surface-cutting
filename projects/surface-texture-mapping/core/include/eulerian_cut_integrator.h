@@ -152,15 +152,30 @@ private:
     );
 
     // Step 4: 提取边界线
+    struct BoundarySegment {
+        GC_Vector3 start;
+        GC_Vector3 end;
+        double length = 0.0;
+    };
+
     struct BoundaryLine {
         GC_Vector3 start;
         GC_Vector3 end;
-        int segmentType;  // BoundarySegment::BType的整数值
+        int segmentType;  // BoundarySegment::BType的整数值（0=开放路径，1=闭环）
+        double length = 0.0;  // 线段或路径长度
+        std::vector<GC_Vector3> fullPath;  // 完整路径点序列（用于可视化）
+        std::vector<BoundarySegment> segmentSequence;  // ⭐ 完整的线段序列（保留几何信息）
     };
 
     std::vector<BoundaryLine> extractBoundaryLines(
         EulerianShapeOptimizer& optimizer,  // 移除const，因为getBoundaryLines()不是const方法
         const OptimizationParams& params
+    );
+
+    // 辅助函数：合并连续的边界线段为路径
+    std::vector<BoundaryLine> mergeBoundarySegments(
+        const std::vector<BoundaryLine>& segments,
+        double tolerance
     );
 
     // Step 5: 边界线转换为边路径

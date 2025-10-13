@@ -1,0 +1,94 @@
+适用于 .NET Framework MSBuild 版本 17.14.19+164abd434
+
+  Clipper2.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\Clipper2.lib
+  bff.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\bff.lib
+  core.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\core.lib
+  flatten-core.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\flatten-core.lib
+  rectangle-bin-pack.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\rectangle-bin-pack.lib
+  cuts-core.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\cuts-core.lib
+  geometry-central.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\geometry-central.lib
+  glfw_objects.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\deps\nanogui\ext_build\glfw\src\glfw_objects.dir\Debug\glfw_objects.lib
+  glfw.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\glfw3.lib
+  eulerian_cut_integrator.cpp
+  variational_cutting.cpp
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(23,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(24,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(25,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(26,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(27,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(28,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(23,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(24,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(25,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(26,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(27,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\surface\halfedge_logic_templates.ipp(28,94): warning C4100: 'mesh': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\utilities\dependent_quantity.ipp(48,26): warning C4100: 'buffer': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\utilities\dependent_quantity.ipp(49,26): warning C4100: 'buffer': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\utilities\dependent_quantity.ipp(50,23): warning C4100: 'buffer': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/variational_cutting.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\utilities\dependent_quantity.ipp(48,26): warning C4100: 'buffer': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\utilities\dependent_quantity.ipp(49,26): warning C4100: 'buffer': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\deps\geometry-central\include\geometrycentral\utilities\dependent_quantity.ipp(50,23): warning C4100: 'buffer': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\core\include\utilities.h(19,12): warning C4201: 使用了非标准扩展: 无名称的结构/联合 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\projects\surface-texture-mapping\core\src\variational_cutting.cpp(163,68): warning C4100: 'params': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+F:\Code\OpenProject\variational-surface-cutting\projects\surface-texture-mapping\core\src\variational_cutting.cpp(447,77): warning C4100: 'cuts': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+F:\Code\OpenProject\variational-surface-cutting\core\include\geometry.ipp(398,64): warning C4100: 'faceAreaWeighted': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\core\include\geometry.ipp(398,56): warning C4100: 'e': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\core\include\geometry.ipp(497,54): warning C4100: 'h': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+  (编译源文件“../../../../../projects/surface-texture-mapping/core/src/eulerian_cut_integrator.cpp”)
+  
+F:\Code\OpenProject\variational-surface-cutting\projects\surface-texture-mapping\core\src\eulerian_cut_integrator.cpp(33,35): warning C4100: 'conePoints': 未引用的参数 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+F:\Code\OpenProject\variational-surface-cutting\projects\surface-texture-mapping\core\src\eulerian_cut_integrator.cpp(214,30): error C2039: "hasBoundary": 不是 "HalfedgeMesh" 的成员 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+      F:\Code\OpenProject\variational-surface-cutting\core\include\halfedge_mesh.h(37,7):
+      参见“HalfedgeMesh”的声明
+  
+F:\Code\OpenProject\variational-surface-cutting\projects\surface-texture-mapping\core\src\eulerian_cut_integrator.cpp(230,24): error C2039: "raw": 不是 "VertexData<LabelVec>" 的成员 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+      F:\Code\OpenProject\variational-surface-cutting\core\include\halfedge_data_types.h(13,7):
+      参见“VertexData<LabelVec>”的声明
+  
+F:\Code\OpenProject\variational-surface-cutting\projects\surface-texture-mapping\core\src\eulerian_cut_integrator.cpp(233,64): error C2039: "raw": 不是 "VertexData<LabelVec>" 的成员 [F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\projects\surface-texture-mapping\core\stm-core.vcxproj]
+      F:\Code\OpenProject\variational-surface-cutting\core\include\halfedge_data_types.h(13,7):
+      参见“VertexData<LabelVec>”的声明
+  

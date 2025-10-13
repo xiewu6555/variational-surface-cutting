@@ -1,0 +1,14 @@
+适用于 .NET Framework MSBuild 版本 17.14.19+164abd434
+
+  Clipper2.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\Clipper2.lib
+  bff.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\bff.lib
+  halfedge_mesh.cpp
+  core.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\core.lib
+  flatten-core.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\flatten-core.lib
+  rectangle-bin-pack.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\rectangle-bin-pack.lib
+  cuts-core.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\cuts-core.lib
+  geometry-central.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\geometry-central.lib
+  glfw_objects.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\deps\nanogui\ext_build\glfw\src\glfw_objects.dir\Debug\glfw_objects.lib
+  glfw.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\glfw3.lib
+  stm-core.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\lib\Debug\stm-core.lib
+  SurfaceTextureMapping_imgui_gui.vcxproj -> F:\Code\OpenProject\variational-surface-cutting\build\STM-Debug\bin\Debug\SurfaceTextureMapping_imgui_gui.exe

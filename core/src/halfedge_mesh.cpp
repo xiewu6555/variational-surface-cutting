@@ -70,17 +70,30 @@ size_t HalfedgeMesh::longestBoundaryLoop() {
 }
 
 void HalfedgeMesh::cache_longestBoundaryLoop() {
+    // 如果没有边界循环，不需要计算
+    if (nBoundaryLoops() == 0) {
+        _longestBoundaryLoop = 0;
+        return;
+    }
+
     int max = 0;
     for (size_t i = 0; i < nBoundaryLoops(); i++) {
         // Count halfedges on boundary and check if greater than max
         int n = 0;
         HalfedgePtr he = boundaryLoop(i).halfedge();
+
+        // 安全检查：确保halfedge指针有效
+        if (he.ptr == nullptr) {
+            std::cerr << "Warning: Boundary loop " << i << " has null halfedge pointer" << std::endl;
+            continue;
+        }
+
         HalfedgePtr h = he;
         do {
             n++;
             h = h.next();
         } while (h != he);
-        
+
         if (n > max) {
             max = n;
             _longestBoundaryLoop = i;

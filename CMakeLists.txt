@@ -205,9 +205,22 @@ add_subdirectory(projects)
 add_subdirectory(gui)
 #add_subdirectory(plugins)
 
-### Test executable for HalfedgeMesh fix verification
-add_executable(test_halfedge_fix test_halfedge_fix.cpp)
-target_link_libraries(test_halfedge_fix core)
-if(SUITESPARSE_FOUND)
-    target_link_libraries(test_halfedge_fix ${SUITESPARSE_LIBRARIES})
-endif()
+
+# 测试程序：网格转换测试
+add_executable(test_mesh_conversion test_mesh_conversion.cpp)
+target_link_libraries(test_mesh_conversion stm-core geometry-central core)
+target_include_directories(test_mesh_conversion PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include
+    ${CMAKE_SOURCE_DIR}/projects/surface-texture-mapping/core/include
+    ${CMAKE_SOURCE_DIR}/deps/geometry-central/include
+    ${CMAKE_SOURCE_DIR}/deps/eigen
+)
+
+# 最简测试程序
+add_executable(test_simple_mesh test_simple_mesh.cpp)
+target_link_libraries(test_simple_mesh geometry-central core)
+target_include_directories(test_simple_mesh PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include
+    ${CMAKE_SOURCE_DIR}/deps/geometry-central/include
+    ${CMAKE_SOURCE_DIR}/deps/eigen
+)

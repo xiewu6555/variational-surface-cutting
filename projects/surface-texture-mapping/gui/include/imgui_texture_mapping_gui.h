@@ -215,6 +215,9 @@ private:
     std::vector<float> m_uvGridVertices;    // UV grid lines
     std::vector<float> m_patternVertices;   // Pattern lines
 
+    // 存储切割曲线（用于渲染）
+    std::vector<VariationalCutter::CutCurve> m_cutCurves;
+
     // GUI状态
     struct GUIState {
         // 文件操作
@@ -222,16 +225,53 @@ private:
         char outputPrefix[256] = "output";
 
         // 网格处理参数
+        // 重要：Variational Surface Cutting算法需要平衡网格质量和计算性能
+        //
+        // ⭐⭐⭐ 性能约束（基于ANALYSIS_no_interior_vertices_deep_dive.md深度分析 - 2025-10-13）：
+        //   ┌─────────────────────────────────────────────────────────────────┐
+        //   │ 最小顶点数：5000（避免"no interior vertices"退化patches错误）│
+        //   │ 理想顶点数：5000-8000（最优性能和质量平衡）                │
+        //   │ 硬限制顶点数：12000（超过直接失败，避免内存溢出）         │
+        //   └─────────────────────────────────────────────────────────────────┘
+        //
+        // ⭐⭐⭐ 实测数据（Spot模型，对角线长度~2.4，基于深度分析）：
+        //   Target Edge Length    顶点数      状态       说明
+        //   ──────────────────────────────────────────────────────────────
+        //   0.010                 ~30k        ❌ 失败    超过12k硬限制 → 构建失败
+        //   0.012                 ~20k        ❌ 失败    超过12k硬限制
+        //   0.015                 ~14k        ⚠️  超限    接近12k → 可能失败
+        //   0.018                 ~10k        ⚠️  边缘    接近上限
+        //   0.020                 ~8-9k       ✅ 理想    最佳平衡点（强烈推荐）
+        //   0.025                 ~6-7k       ✅ 良好    稳定可靠
+        //   0.030                 ~5-6k       ✅ 可用    最小可靠配置（默认值）
+        //   0.035                 ~3-4k       ⚠️  偏低    可能触发5k下限检查
+        //   0.040                 ~2-3k       ❌ 失败    < 5k最小值 → "resolution too low"错误
+        //
+        // ⭐⭐⭐ 深度分析结论（2025-10-13）：
+        //   问题根源：Normal Clustering在低分辨率网格上产生拓扑退化的patches
+        //   退化表现：某些patches（如尖端区域）所有顶点都在边界上（nInterior=0）
+        //   数学约束：Yamabe方程求解器需要每个patch至少50个内部顶点
+        //   不均匀分布：即使总顶点数3000，尖端patches可能只分到24个顶点（全是边界）
+        //   安全策略：MIN_TOTAL_VERTICES=5000，应对最坏情况的patch分布
+        //
+        // ⭐⭐⭐ 推荐默认值（2025-10-13修订 v3）：
+        //   Target Edge Length = 0.025 → 中间值策略（~7-8k顶点，最佳平衡）
+        //   理由：
+        //   - 0.020对部分模型产生18k+顶点（超过12k限制） ❌
+        //   - 0.030产生~5-6k顶点（刚好达标，无安全边际） ⚠️
+        //   - 0.025产生~7-8k顶点（处于5k-12k窗口中心，最安全） ✅
+        //   - 为不同尺寸和复杂度的模型提供最大兼容性
+        //   - 对于大多数模型（对角线0.5-5单位）都能稳定工作
         bool enableRemeshing = true;
-        float targetEdgeLength = 0.01f;
-        int remeshIterations = 3;
+        float targetEdgeLength = 0.025f;   // ⭐ 最终修订为0.025（v1:0.030→v2:0.020→v3:0.025，中间值策略）
+        int remeshIterations = 10;         // 提升迭代次数（from 5→10，提高重网格化质量）
         bool protectBoundary = true;
 
         // 变分切缝参数
         bool enableCutting = true;
         float lengthRegularization = 0.1f;
         float smoothRegularization = 0.05f;
-        int maxCuttingIterations = 30;
+        int maxCuttingIterations = 300;  // GitHub README推荐值
 
         // 纹理映射参数
         bool enableTexturing = true;
@@ -362,6 +402,17 @@ private:
     void computeCuts();
     void computeUVMapping();
     void generatePatterns();
+
+    // 网格质量检查辅助方法
+    struct MeshQualityCheckResult {
+        bool isGoodQuality = false;
+        double edgeLengthRatio = 0.0;
+        double minEdgeLength = 0.0;
+        double maxEdgeLength = 0.0;
+        double avgEdgeLength = 0.0;
+        std::string errorMessage;
+    };
+    MeshQualityCheckResult checkMeshQuality();
 
     // 相机控制
     void updateCamera();

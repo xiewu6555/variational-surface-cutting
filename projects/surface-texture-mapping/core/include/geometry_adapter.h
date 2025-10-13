@@ -148,6 +148,7 @@ private:
 
     // 计算几何误差
     static void computeGeometricErrors(
+        std::shared_ptr<GeometryTypeMapping::GC_Mesh> mesh1,
         std::shared_ptr<GeometryTypeMapping::GC_Geometry> geom1,
         const GeometryTypeMapping::Core_Geometry* geom2,
         ConversionResult& result

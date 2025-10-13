@@ -22,6 +22,7 @@ using namespace geometrycentral::surface;
 
 /**
  * Real BFF Implementation using geometry-central
+ * https://geometrycollective.github.io/boundary-first-flattening/
  */
 class BFFWrapper::Implementation {
 public:

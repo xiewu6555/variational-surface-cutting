@@ -78,6 +78,12 @@ public:
 
     MeshStats getMeshStats() const;
 
+    /**
+     * 计算合适的目标边长（基于网格中位数边长）
+     * @return 推荐的目标边长，范围限制在[1e-5, 0.5]以确保合理性
+     */
+    double computeTargetEdgeLength() const;
+
     // Getter方法
     std::shared_ptr<SurfaceMesh> getMesh() const { return mesh_; }
     std::shared_ptr<VertexPositionGeometry> getGeometry() const { return geometry_; }
@@ -85,12 +91,6 @@ public:
 private:
     std::shared_ptr<SurfaceMesh> mesh_;
     std::shared_ptr<VertexPositionGeometry> geometry_;
-
-    /**
-     * 计算合适的目标边长
-     * @return 推荐的目标边长
-     */
-    double computeTargetEdgeLength() const;
 
     // 私有辅助方法
     void removeDuplicateVertices();

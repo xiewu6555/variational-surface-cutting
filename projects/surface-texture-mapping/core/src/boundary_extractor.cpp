@@ -60,11 +60,56 @@ BoundaryExtractor::extractEdgePaths(
 
             outResult.maxSnapError = std::max(outResult.maxSnapError, std::max(dist1, dist2));
 
+            // 改进：如果两端点snap到同一顶点，尝试细分边界
             if (v1 == v2) {
-                if (options.verbose) {
-                    std::cout << "  Warning: Boundary snapped to same vertex, skipping" << std::endl;
+                // 检查边界长度，如果太短则跳过
+                double boundaryLength = distance(boundary.start, boundary.end);
+                if (boundaryLength < options.snapTolerance * 2.0) {
+                    if (options.verbose) {
+                        std::cout << "  Warning: Boundary too short (length=" << boundaryLength
+                                  << "), skipping" << std::endl;
+                    }
+                    continue;
                 }
-                continue;
+
+                // 尝试使用中点
+                GC_Vector3 midpoint{
+                    (boundary.start.x + boundary.end.x) * 0.5,
+                    (boundary.start.y + boundary.end.y) * 0.5,
+                    (boundary.start.z + boundary.end.z) * 0.5
+                };
+
+                double distMid;
+                VertexPtr vMid = findNearestVertex(midpoint, coreMesh, coreGeometry, distMid);
+
+                if (vMid != nullptr && vMid != v1) {
+                    // 成功找到不同的中间顶点，分成两段处理
+                    // 段1: v1 -> vMid
+                    auto path1 = findShortestEdgePath(v1, vMid, coreMesh, coreGeometry, options.maxPathLength);
+                    auto gcPath1 = mapCoreEdgesToGC(path1, coreMesh, gcMesh);
+
+                    // 段2: vMid -> v2 (注意v2此时等于v1，所以实际是vMid到v1的回路)
+                    auto path2 = findShortestEdgePath(vMid, v1, coreMesh, coreGeometry, options.maxPathLength);
+                    auto gcPath2 = mapCoreEdgesToGC(path2, coreMesh, gcMesh);
+
+                    // 合并两段
+                    if (!gcPath1.empty() && validateEdgePath(gcPath1, gcMesh)) {
+                        result.push_back(gcPath1);
+                        outResult.numEdgesExtracted += gcPath1.size();
+                    }
+                    if (!gcPath2.empty() && validateEdgePath(gcPath2, gcMesh)) {
+                        result.push_back(gcPath2);
+                        outResult.numEdgesExtracted += gcPath2.size();
+                    }
+                    outResult.numBoundariesProcessed++;
+                    continue;
+                } else {
+                    // 中点也snap到同一顶点，边界太短，跳过
+                    if (options.verbose) {
+                        std::cout << "  Warning: Boundary snapped to same vertex even with midpoint, skipping" << std::endl;
+                    }
+                    continue;
+                }
             }
 
             // Step 2: 找到最短边路径

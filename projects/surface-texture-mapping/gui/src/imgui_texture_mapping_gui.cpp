@@ -120,6 +120,13 @@ bool ImGuiTextureMappingGUI::initialize() {
     // Initialize camera
     updateCamera();
 
+    logMessage("=========================================");
+    logMessage("Surface Texture Mapping GUI v1.3");
+    logMessage("Build: 2025-10-13 - Intelligent Vertex Count Validation");
+    logMessage("Default Target Edge Length: 0.025 (~7-8k vertices, balanced)");
+    logMessage("CRITICAL: Vertex Range: 5,000 minimum - 12,000 maximum");
+    logMessage("Auto-guidance for out-of-range vertex counts");
+    logMessage("=========================================");
     logMessage("GUI initialized successfully");
     return true;
 }
@@ -379,11 +386,41 @@ void ImGuiTextureMappingGUI::renderMesh() {
 }
 
 void ImGuiTextureMappingGUI::renderCuts() {
-    // TODO: Implement cuts rendering
+    if (m_lineVertices.empty()) return;
+
+    // 使用线条模式渲染
+    glUseProgram(m_shaderProgram);
+    glUniform1i(glGetUniformLocation(m_shaderProgram, "wireframe"), true);
+    glUniform3fv(glGetUniformLocation(m_shaderProgram, "objectColor"), 1, glm::value_ptr(m_guiState.cutColor));
+
+    // 设置线宽（使切割线更明显）
+    glLineWidth(3.0f);
+
+    // 绑定VAO并绘制
+    glBindVertexArray(m_linesVAO);
+    glDrawArrays(GL_LINES, 0, m_lineVertices.size() / 6);  // 6 floats per vertex (pos + normal)
+
+    // 恢复默认线宽
+    glLineWidth(1.0f);
 }
 
 void ImGuiTextureMappingGUI::renderPatterns() {
-    // TODO: Implement patterns rendering
+    if (m_patternVertices.empty()) return;
+
+    // 使用线条模式渲染
+    glUseProgram(m_shaderProgram);
+    glUniform1i(glGetUniformLocation(m_shaderProgram, "wireframe"), true);
+    glUniform3fv(glGetUniformLocation(m_shaderProgram, "objectColor"), 1, glm::value_ptr(m_guiState.patternColor));
+
+    // 设置线宽（使图案线条清晰可见）
+    glLineWidth(2.0f);
+
+    // 绑定VAO并绘制
+    glBindVertexArray(m_patternVAO);
+    glDrawArrays(GL_LINES, 0, m_patternVertices.size() / 6);  // 6 floats per vertex
+
+    // 恢复默认线宽
+    glLineWidth(1.0f);
 }
 
 void ImGuiTextureMappingGUI::drawMainMenuBar() {
@@ -474,8 +511,11 @@ void ImGuiTextureMappingGUI::drawControlPanel() {
     ImGui::SeparatorText("Mesh Processing");
     ImGui::Checkbox("Enable Remeshing", &m_guiState.enableRemeshing);
     if (m_guiState.enableRemeshing) {
-        ImGui::SliderFloat("Target Edge Length", &m_guiState.targetEdgeLength, 0.005f, 0.05f, "%.3f");
-        ImGui::SliderInt("Remesh Iterations", &m_guiState.remeshIterations, 1, 10);
+        ImGui::SliderFloat("Target Edge Length", &m_guiState.targetEdgeLength, 0.015f, 0.050f, "%.4f");
+        ImGui::TextDisabled("(REQUIRED: 5k-12k vertices to avoid errors)");
+        ImGui::TextDisabled("(SAFE ZONE: 0.023-0.028 produces 6k-9k vertices)");
+        ImGui::TextDisabled("(Auto-validation will suggest adjustments if out of range)");
+        ImGui::SliderInt("Remesh Iterations", &m_guiState.remeshIterations, 5, 15);
         ImGui::Checkbox("Protect Boundary", &m_guiState.protectBoundary);
     }
 
@@ -485,7 +525,8 @@ void ImGuiTextureMappingGUI::drawControlPanel() {
     if (m_guiState.enableCutting) {
         ImGui::SliderFloat("Length Regularization", &m_guiState.lengthRegularization, 0.0f, 1.0f, "%.3f");
         ImGui::SliderFloat("Smooth Regularization", &m_guiState.smoothRegularization, 0.0f, 0.5f, "%.3f");
-        ImGui::SliderInt("Max Iterations", &m_guiState.maxCuttingIterations, 10, 100);
+        ImGui::SliderInt("Max Iterations", &m_guiState.maxCuttingIterations, 10, 500);  // GitHub推荐300步
+        ImGui::TextDisabled("(GitHub README recommends 300 iterations)");
     }
 
     // Texture Mapping Parameters
@@ -507,12 +548,61 @@ void ImGuiTextureMappingGUI::drawControlPanel() {
         }
     }
 
-    // Process Button
+    // Process Buttons
     ImGui::Separator();
+
+    // Full Pipeline Button
     if (ImGui::Button("Run Full Pipeline", ImVec2(-1, 30))) {
         if (m_meshLoaded && !m_processingInProgress) {
             runFullPipeline();
         }
+    }
+
+    // Individual Step Buttons
+    ImGui::SeparatorText("Step-by-Step Execution");
+
+    // Step 1: Process Mesh
+    bool canProcessMesh = m_meshLoaded && !m_processingInProgress;
+    if (!canProcessMesh) ImGui::BeginDisabled();
+    if (ImGui::Button("Step 1: Process Mesh", ImVec2(-1, 0))) {
+        processMesh();
+    }
+    if (!canProcessMesh) ImGui::EndDisabled();
+
+    // Step 2: Compute Cuts
+    bool canComputeCuts = m_meshLoaded && !m_processingInProgress;
+    if (!canComputeCuts) ImGui::BeginDisabled();
+    if (ImGui::Button("Step 2: Compute Cuts", ImVec2(-1, 0))) {
+        computeCuts();
+    }
+    if (!canComputeCuts) ImGui::EndDisabled();
+
+    // Step 3: UV Mapping
+    bool canComputeUV = m_meshLoaded && !m_processingInProgress;
+    if (!canComputeUV) ImGui::BeginDisabled();
+    if (ImGui::Button("Step 3: UV Mapping", ImVec2(-1, 0))) {
+        computeUVMapping();
+    }
+    if (!canComputeUV) ImGui::EndDisabled();
+
+    // Step 4: Generate Patterns
+    bool canGeneratePatterns = m_meshLoaded && !m_processingInProgress && m_uvMappingComputed;
+    if (!canGeneratePatterns) ImGui::BeginDisabled();
+    if (ImGui::Button("Step 4: Generate Patterns", ImVec2(-1, 0))) {
+        generatePatterns();
+    }
+    if (!canGeneratePatterns) ImGui::EndDisabled();
+
+    // Status indicator
+    ImGui::Separator();
+    ImGui::Text("Status: %s", m_statusMessage.c_str());
+    if (m_meshLoaded) {
+        ImGui::Text("Pipeline Progress:");
+        ImGui::BulletText("Mesh Loaded: Yes");
+        ImGui::BulletText("Mesh Processed: %s", m_meshProcessed ? "Yes" : "No");
+        ImGui::BulletText("Cuts Computed: %s", m_cutComputed ? "Yes" : "No");
+        ImGui::BulletText("UV Mapping: %s", m_uvMappingComputed ? "Yes" : "No");
+        ImGui::BulletText("Patterns Generated: %s", m_patternsGenerated ? "Yes" : "No");
     }
 
     ImGui::End();
@@ -919,8 +1009,26 @@ void ImGuiTextureMappingGUI::processMesh() {
     try {
         // 使用MeshProcessor进行重网格化
         if (m_guiState.enableRemeshing) {
+            // ========== 目标边长选择策略 ==========
+            // 优先使用GUI设置的值，因为用户可能已经根据性能调整过
+            double guiTargetEdgeLength = m_guiState.targetEdgeLength;
+            double autoTargetEdgeLength = m_meshProcessor->computeTargetEdgeLength();
+
+            logMessage("  Target edge length selection:");
+            logMessage("    GUI setting: " + std::to_string(guiTargetEdgeLength));
+            logMessage("    Auto-computed: " + std::to_string(autoTargetEdgeLength));
+
+            // ⭐ 优先使用GUI值，除非它明显不合理（<0.005或>0.1）
+            double actualTargetEdgeLength = guiTargetEdgeLength;
+            if (guiTargetEdgeLength < 0.005 || guiTargetEdgeLength > 0.1) {
+                actualTargetEdgeLength = autoTargetEdgeLength;
+                logMessage("    GUI value out of range, using auto-computed");
+            } else {
+                logMessage("    Using GUI value (user preference)");
+            }
+
             bool success = m_meshProcessor->isotropicRemeshing(
-                m_guiState.targetEdgeLength,
+                actualTargetEdgeLength,
                 m_guiState.remeshIterations,
                 m_guiState.protectBoundary
             );
@@ -938,9 +1046,75 @@ void ImGuiTextureMappingGUI::processMesh() {
                 updateMeshBuffers();
                 updateStatistics();
 
-                m_meshProcessed = true;
-                logMessage("Mesh processing completed: " +
-                          std::to_string(m_mesh->nVertices()) + " vertices");
+                int numVertices = m_mesh->nVertices();
+
+                // ========== 关键验证：检查顶点数是否在合理范围内 ==========
+                const int MIN_REQUIRED_VERTICES = 5000;
+                const int MAX_ALLOWED_VERTICES = 12000;
+
+                logMessage("  Remeshed vertex count: " + std::to_string(numVertices));
+
+                if (numVertices < MIN_REQUIRED_VERTICES) {
+                    logMessage("  ========================================");
+                    logMessage("  WARNING: Vertex count TOO LOW!");
+                    logMessage("  Current: " + std::to_string(numVertices) +
+                              " (minimum required: " + std::to_string(MIN_REQUIRED_VERTICES) + ")");
+                    logMessage("  ========================================");
+                    logMessage("  SOLUTION: Decrease 'Target Edge Length'");
+                    logMessage("    Current value: " + std::to_string(actualTargetEdgeLength));
+
+                    // 计算推荐值（减少边长以增加顶点数）
+                    double vertexRatio = static_cast<double>(MIN_REQUIRED_VERTICES) / numVertices;
+                    double lengthRatio = 1.0 / sqrt(vertexRatio);  // 边长与顶点数的平方根成反比
+                    double recommendedLength = actualTargetEdgeLength * lengthRatio * 0.9;  // 0.9安全系数
+
+                    logMessage("    Recommended: " + std::to_string(recommendedLength) +
+                              " (to achieve ~" + std::to_string(MIN_REQUIRED_VERTICES) + " vertices)");
+                    logMessage("  ========================================");
+
+                    m_meshProcessed = false;  // 标记为未完成
+                    m_statusMessage = "Remeshing produced too few vertices";
+
+                } else if (numVertices > MAX_ALLOWED_VERTICES) {
+                    logMessage("  ========================================");
+                    logMessage("  WARNING: Vertex count TOO HIGH!");
+                    logMessage("  Current: " + std::to_string(numVertices) +
+                              " (maximum allowed: " + std::to_string(MAX_ALLOWED_VERTICES) + ")");
+                    logMessage("  ========================================");
+                    logMessage("  CRITICAL: This will cause 'Mesh too dense' error in Step 2!");
+                    logMessage("  ========================================");
+                    logMessage("  SOLUTION: Increase 'Target Edge Length'");
+                    logMessage("    Current value: " + std::to_string(actualTargetEdgeLength));
+
+                    // 计算推荐值（增加边长以减少顶点数）
+                    double vertexRatio = static_cast<double>(numVertices) / (MAX_ALLOWED_VERTICES * 0.9);  // 目标90%上限
+                    double lengthRatio = sqrt(vertexRatio);  // 边长与顶点数的平方根成正比
+                    double recommendedLength = actualTargetEdgeLength * lengthRatio;
+
+                    logMessage("    Recommended: " + std::to_string(recommendedLength) +
+                              " (to achieve ~" + std::to_string(static_cast<int>(MAX_ALLOWED_VERTICES * 0.9)) + " vertices)");
+                    logMessage("  ========================================");
+                    logMessage("  ACTION REQUIRED:");
+                    logMessage("    1. Adjust 'Target Edge Length' slider to " + std::to_string(recommendedLength));
+                    logMessage("    2. Click 'Step 1: Process Mesh' again");
+                    logMessage("    3. Verify vertex count is in 5k-10k range");
+                    logMessage("  ========================================");
+
+                    m_meshProcessed = false;  // 标记为未完成
+                    m_statusMessage = "Remeshing produced too many vertices";
+
+                } else {
+                    // 顶点数在合理范围内
+                    logMessage("  ✓ Vertex count validation PASSED");
+                    logMessage("    Range: " + std::to_string(MIN_REQUIRED_VERTICES) +
+                              " - " + std::to_string(MAX_ALLOWED_VERTICES));
+                    logMessage("    Actual: " + std::to_string(numVertices) +
+                              " (SAFE for Variational Cutting)");
+
+                    m_meshProcessed = true;
+                    m_statusMessage = "Mesh processed successfully";
+                    logMessage("Mesh processing completed: " + std::to_string(numVertices) + " vertices");
+                }
             } else {
                 logMessage("Warning: Mesh processing failed, using original mesh");
             }
@@ -950,22 +1124,210 @@ void ImGuiTextureMappingGUI::processMesh() {
     }
 }
 
+/**
+*
+  Variational Surface Cutting算法需要高质量、均匀的网格才能稳定运行：
+  - 原始模型的边长差异太大
+  - 优化器需要均匀的网格来构建稳定的数值算子
+  - Remesh会创建等各向性网格，消除数值不稳定
+
+*  成功的集成架构：
+  Surface Texture Mapping GUI
+      ↓
+  VariationalCutter::computeOptimalCuts()
+      ↓
+  EulerianCutIntegrator::generateCuts()
+      ↓ Step 1: Mesh Conversion
+  GeometryAdapter::convertFromGeometryCentral()
+      (geometry-central → Core库格式)
+      ↓ Step 2: Optimizer Creation
+  EulerianOptimizerWrapper::createEulerianOptimizer()
+      ↓ 初始化
+  normalClusterMSDF() → optimizer->setState()
+      ↓ Step 3: Optimization
+  optimizer->doStep() × maxIterations
+      ↓ Step 4: Boundary Extraction
+  optimizer->getBoundaryLines()
+      ↓ Step 5: Convert to Edge Paths
+  BoundaryExtractor::extractEdgePaths()
+      (3D点 → geometry-central边路径)
+ */
+
+/**
+ * 检查网格质量是否适合Variational Surface Cutting算法
+ * 返回网格质量统计和是否需要重网格化
+ */
+ImGuiTextureMappingGUI::MeshQualityCheckResult ImGuiTextureMappingGUI::checkMeshQuality() {
+    using namespace geometrycentral::surface;
+
+    MeshQualityCheckResult result;
+
+    if (!m_mesh || !m_geometry) {
+        result.errorMessage = "No mesh loaded";
+        return result;
+    }
+
+    // 网格有效性检查
+    if (m_mesh->nEdges() == 0) {
+        result.errorMessage = "Empty mesh: no edges found";
+        return result;
+    }
+
+    // 计算边长统计
+    m_geometry->requireEdgeLengths();
+
+    double totalLength = 0.0;
+    double minLength = std::numeric_limits<double>::max();
+    double maxLength = 0.0;
+    size_t edgeCount = 0;
+
+    for (Edge e : m_mesh->edges()) {
+        double length = m_geometry->edgeLengths[e];
+        totalLength += length;
+        minLength = std::min(minLength, length);
+        maxLength = std::max(maxLength, length);
+        ++edgeCount;
+    }
+
+    // 填充基本统计信息
+    result.minEdgeLength = minLength;
+    result.maxEdgeLength = maxLength;
+    result.avgEdgeLength = totalLength / edgeCount;
+
+    // 数值稳定性检查：防止除零
+    constexpr double EPSILON = 1e-10;
+    if (minLength < EPSILON) {
+        result.isGoodQuality = false;
+        result.edgeLengthRatio = std::numeric_limits<double>::infinity();
+        result.errorMessage = "Degenerate mesh: minimum edge length is nearly zero";
+        return result;
+    }
+
+    result.edgeLengthRatio = maxLength / minLength;
+
+    // Variational Surface Cutting算法的数值稳定性要求
+    // 边长比率超过10会导致离散算子条件数过大，参考README和eulerian_cut_integrator.cpp:236
+    constexpr double MAX_ACCEPTABLE_RATIO = 10.0;
+    result.isGoodQuality = (result.edgeLengthRatio <= MAX_ACCEPTABLE_RATIO);
+
+    if (!result.isGoodQuality) {
+        std::ostringstream oss;
+        oss << "Mesh quality insufficient: edge length ratio "
+            << std::fixed << std::setprecision(2) << result.edgeLengthRatio
+            << " exceeds threshold " << MAX_ACCEPTABLE_RATIO;
+        result.errorMessage = oss.str();
+    }
+
+    return result;
+}
+
 void ImGuiTextureMappingGUI::computeCuts() {
     if (!m_meshLoaded) return;
 
     logMessage("Step 2: Computing variational cuts...");
+    logMessage("  [INFO] Using REAL Variational Surface Cutting algorithm (NO FALLBACK)");
 
     try {
+        // ========== 关键改进：自动检查网格质量 ==========
+        logMessage("  Checking mesh quality...");
+        auto qualityCheck = checkMeshQuality();
+
+        logMessage("    Min edge length: " + std::to_string(qualityCheck.minEdgeLength));
+        logMessage("    Max edge length: " + std::to_string(qualityCheck.maxEdgeLength));
+        logMessage("    Avg edge length: " + std::to_string(qualityCheck.avgEdgeLength));
+        logMessage("    Edge length ratio: " + std::to_string(qualityCheck.edgeLengthRatio));
+
+        // 如果网格质量不足，自动触发重网格化
+        if (!qualityCheck.isGoodQuality) {
+            logMessage("  ========================================");
+            logMessage("  WARNING: " + qualityCheck.errorMessage);
+            logMessage("  ========================================");
+
+            if (m_guiState.enableRemeshing) {
+                logMessage("  Auto-fixing: Remeshing enabled, automatically processing mesh...");
+
+                // ========== 智能目标边长计算 ==========
+                // 使用中位数边长避免过度细分
+                double autoTargetEdgeLength = m_meshProcessor->computeTargetEdgeLength();
+                double originalTargetEdgeLength = m_guiState.targetEdgeLength;
+
+                // 使用自动计算的值（通常比固定的0.005更合理）
+                m_guiState.targetEdgeLength = autoTargetEdgeLength;
+
+                logMessage("  Auto-computed target edge length: " + std::to_string(autoTargetEdgeLength));
+                logMessage("  (Original GUI value: " + std::to_string(originalTargetEdgeLength) + ")");
+                logMessage("  Parameters: Target edge length = " + std::to_string(m_guiState.targetEdgeLength));
+
+                // 自动调用重网格化 - 带异常处理
+                try {
+                    processMesh();
+
+                    // 验证重网格化是否成功
+                    if (!m_meshProcessed) {
+                        throw std::runtime_error("Mesh processing reported failure");
+                    }
+
+                } catch (const std::exception& remeshError) {
+                    logMessage("  ERROR: Automatic remeshing failed: " + std::string(remeshError.what()));
+                    throw std::runtime_error(
+                        "Mesh quality insufficient and automatic remeshing failed. "
+                        "Please manually process mesh with smaller target edge length (e.g., 0.005)."
+                    );
+                }
+
+                // 重新检查质量
+                auto newQualityCheck = checkMeshQuality();
+                logMessage("  After remeshing:");
+                logMessage("    New edge length ratio: " + std::to_string(newQualityCheck.edgeLengthRatio));
+
+                if (!newQualityCheck.isGoodQuality) {
+                    throw std::runtime_error(
+                        "Mesh quality still insufficient after remeshing (ratio: " +
+                        std::to_string(newQualityCheck.edgeLengthRatio) +
+                        "). Please try a smaller target edge length (e.g., 0.005)."
+                    );
+                }
+
+                logMessage("  ✓ Mesh quality improved, proceeding with cutting...");
+            } else {
+                // 未启用重网格化，给出明确指导
+                logMessage("  ========================================");
+                logMessage("  ERROR: Cannot proceed without remeshing!");
+                logMessage("  SOLUTION:");
+                logMessage("    1. Enable 'Enable Remeshing' checkbox");
+                logMessage("    2. Set 'Target Edge Length' to 0.01 or smaller");
+                logMessage("    3. Click 'Step 1: Process Mesh (Remesh)' first");
+                logMessage("    4. Then retry 'Step 2: Compute Cuts'");
+                logMessage("  ========================================");
+
+                throw std::runtime_error(
+                    "Mesh quality insufficient. Please enable remeshing and process mesh first."
+                );
+            }
+        } else {
+            logMessage("  ✓ Mesh quality check passed (ratio = " +
+                      std::to_string(qualityCheck.edgeLengthRatio) + " < 10.0)");
+        }
+        // ========== 质量检查结束 ==========
+
         // 设置变分切割参数
         VariationalCutter::CuttingParams params;
         params.lengthRegularization = m_guiState.lengthRegularization;
         params.smoothRegularization = m_guiState.smoothRegularization;
         params.maxIterations = m_guiState.maxCuttingIterations;
 
+        logMessage("  Parameters:");
+        logMessage("    Length regularization: " + std::to_string(params.lengthRegularization));
+        logMessage("    Smooth regularization: " + std::to_string(params.smoothRegularization));
+        logMessage("    Max iterations: " + std::to_string(params.maxIterations));
+
         // 计算最优切缝
         auto cuts = m_cutter->computeOptimalCuts(params);
 
         if (!cuts.empty()) {
+            // 保存切缝曲线用于可视化
+            m_cutCurves = cuts;
+
             m_statistics.numCuts = cuts.size();
             m_statistics.totalCutLength = 0.0f;
             for (const auto& cut : cuts) {
@@ -980,53 +1342,116 @@ void ImGuiTextureMappingGUI::computeCuts() {
                 updateMeshBuffers();
             }
 
+            // 更新切缝的OpenGL缓冲区以供可视化
+            updateCutsBuffers();
+
             m_cutComputed = true;
             logMessage("Cut computation completed: " + std::to_string(cuts.size()) +
                       " cuts, total length = " + std::to_string(m_statistics.totalCutLength));
         } else {
-            logMessage("Warning: No cuts computed, continuing with original mesh");
+            logMessage("WARNING: No cuts computed (empty result), but no exception thrown");
+            logMessage("This suggests the algorithm succeeded but produced no cuts");
         }
+    } catch (const std::runtime_error& e) {
+        // 捕获Variational Surface Cutting集成失败的异常
+        std::string errorMsg = std::string(e.what());
+        logMessage("========================================");
+        logMessage("FATAL ERROR: Variational Surface Cutting Failed!");
+        logMessage("Error: " + errorMsg);
+        logMessage("========================================");
+        logMessage("Please check the console output for detailed debug information");
+
+        // 在控制台也打印错误
+        std::cerr << "\n========================================" << std::endl;
+        std::cerr << "FATAL ERROR in computeCuts():" << std::endl;
+        std::cerr << errorMsg << std::endl;
+        std::cerr << "========================================\n" << std::endl;
+
+        m_cutComputed = false;
     } catch (const std::exception& e) {
         logMessage("Error in cut computation: " + std::string(e.what()));
+        m_cutComputed = false;
     }
 }
 
 void ImGuiTextureMappingGUI::computeUVMapping() {
     if (!m_meshLoaded) return;
 
-    logMessage("Step 3: Computing UV parametrization...");
+    logMessage("Step 3: Computing UV parametrization with Variational Surface Cutting...");
+    logMessage("  [INFO] Using complete Variational Cuts + BFF pipeline");
 
     try {
-        // 设置UV映射参数
+        // 设置UV映射参数（遵循test_bff.cpp的最佳实践）
         TextureMapper::MappingParams params;
         params.useConformalMapping = true;
-        params.automaticConeDetection = true;
+
+        // 配置Variational Cuts参数（遵循GitHub README推荐）
+        // - Normal Clustering初始化（自动执行）
+        // - Hencky能量权重: 3.0（在EulerianCutIntegrator中设置）
+        // - 优化迭代次数: 30次（GUI可配置）
+        params.automaticConeDetection = false;  // 手动指定锥点以更好控制
         params.curvatureThreshold = m_guiState.curvatureThreshold;
+        params.enableAreaCorrection = false;
+
+        // 如果网格是闭合的，手动指定锥点（与test_bff.cpp一致）
+        if (m_mesh->nBoundaryLoops() == 0) {
+            logMessage("  Mesh is closed, detecting cone points...");
+
+            // 检测高曲率点作为锥点候选
+            auto coneIndices = m_textureMapper->detectConeVertices(m_guiState.curvatureThreshold);
+            logMessage("  Found " + std::to_string(coneIndices.size()) + " cone vertex candidates");
+
+            // 使用前4个检测到的高曲率点作为锥点（与test_bff.cpp一致）
+            size_t numConesToUse = std::min(size_t(4), coneIndices.size());
+            for (size_t i = 0; i < numConesToUse; i++) {
+                params.coneVertices.push_back(coneIndices[i]);
+            }
+            logMessage("  Using " + std::to_string(numConesToUse) + " manually specified cone points");
+        } else {
+            logMessage("  Mesh has boundary, using automatic configuration");
+        }
 
         // 计算UV映射
         auto mappingResult = m_textureMapper->computeUVMapping(params);
 
         if (mappingResult.has_value()) {
-            // 保存UV映射结果
-            m_currentUVMapping = mappingResult;
-            const auto& mapping = mappingResult.value();
+            auto mapping = mappingResult.value();
 
-            // 更新统计信息 - 使用UVDistortionAnalyzer计算真实失真（参考测试代码）
-            m_statistics.numCharts = mapping.charts.size();
+            logMessage("  UV mapping computed successfully!");
+            logMessage("    Number of UV coordinates: " + std::to_string(mapping.uvCoordinates.size()));
+            logMessage("    Number of charts: " + std::to_string(mapping.charts.size()));
 
-            // 使用UVDistortionAnalyzer进行详细失真分析
-            m_distortionAnalyzer->setInput(m_mesh, m_geometry, mapping);
+            // 计算失真度量（与test_bff.cpp一致）
+            logMessage("  Computing distortion metrics...");
+            auto metrics = m_textureMapper->computeDistortionMetrics(mapping);
+            logMessage("    Angle distortion: " + std::to_string(metrics.angleDistortion));
+            logMessage("    Area distortion: " + std::to_string(metrics.areaDistortion));
+            logMessage("    Conformal error: " + std::to_string(metrics.conformalError));
+            logMessage("    Total distortion: " + std::to_string(mapping.totalDistortion));
+            logMessage("    Max distortion: " + std::to_string(mapping.maxDistortion));
+
+            // 优化UV布局（与test_bff.cpp一致）
+            logMessage("  Optimizing UV layout...");
+            auto optimizedMapping = m_textureMapper->optimizeUVLayout(mapping, 0.8);
+            logMessage("    Layout optimized with 80% packing efficiency target");
+
+            // 保存优化后的UV映射结果
+            m_currentUVMapping = optimizedMapping;
+            const auto& finalMapping = optimizedMapping;
+
+            // 更新统计信息
+            m_statistics.numCharts = finalMapping.charts.size();
+            m_statistics.angleDistortion = metrics.angleDistortion;
+            m_statistics.areaDistortion = metrics.areaDistortion;
+            m_statistics.conformalError = metrics.conformalError;
+
+            // 使用UVDistortionAnalyzer进行额外的详细失真分析（GUI特有功能）
+            m_distortionAnalyzer->setInput(m_mesh, m_geometry, finalMapping);
             auto distortions = m_distortionAnalyzer->computeAllDistortions();
             auto globalStats = m_distortionAnalyzer->computeGlobalStats(distortions);
 
-            // 更新统计信息使用真实的失真数据
-            m_statistics.angleDistortion = globalStats.conformalMean;
-            m_statistics.areaDistortion = globalStats.areaMean;
-            m_statistics.conformalError = globalStats.conformalMean;
-
-            logMessage("UV mapping completed: " + std::to_string(mapping.charts.size()) + " charts");
-            logMessage("  Distortion analysis:");
-            logMessage("    Stretch (σ_max): mean=" + std::to_string(globalStats.stretchMean) +
+            logMessage("  Additional distortion analysis (UVDistortionAnalyzer):");
+            logMessage("    Stretch (sigma_max): mean=" + std::to_string(globalStats.stretchMean) +
                       ", max=" + std::to_string(globalStats.stretchMax));
             logMessage("    Conformal error: mean=" + std::to_string(globalStats.conformalMean) +
                       ", max=" + std::to_string(globalStats.conformalMax));
@@ -1034,17 +1459,19 @@ void ImGuiTextureMappingGUI::computeUVMapping() {
                       ", max=" + std::to_string(globalStats.areaMax));
 
             // 初始化BarycentricMapper用于后续的图案映射
-            m_barycentricMapper->setInput(m_mesh, m_geometry, mapping);
+            m_barycentricMapper->setInput(m_mesh, m_geometry, finalMapping);
             m_barycentricMapper->buildSpatialIndex();
             logMessage("  Barycentric mapper initialized");
 
             // 保存UV坐标供SurfaceFiller使用
-            m_surfaceFiller->setInput(m_mesh, m_geometry, mapping);
+            m_surfaceFiller->setInput(m_mesh, m_geometry, finalMapping);
 
             m_uvMappingComputed = true;
 
+            logMessage("UV mapping pipeline completed successfully");
+
             // 可选：导出UV网格
-            // m_textureMapper->exportUVMesh(m_guiState.outputPrefix + "_uv.obj", mapping);
+            // m_textureMapper->exportUVMesh(m_guiState.outputPrefix + "_uv.obj", finalMapping);
         } else {
             logMessage("Error: UV mapping failed");
         }
@@ -1158,11 +1585,141 @@ void ImGuiTextureMappingGUI::generatePatterns() {
 }
 
 void ImGuiTextureMappingGUI::updateCutsBuffers() {
-    // TODO: Implement cuts buffer update
+    using namespace geometrycentral;
+
+    // 清空现有数据
+    m_lineVertices.clear();
+
+    if (m_cutCurves.empty()) {
+        return;
+    }
+
+    // 为每条切缝曲线生成线段
+    for (const auto& curve : m_cutCurves) {
+        if (curve.points.size() < 2) continue;  // 至少需要2个点才能形成线段
+
+        // 生成连续的线段 (每条线段2个顶点)
+        for (size_t i = 0; i < curve.points.size() - 1; ++i) {
+            const auto& p1 = curve.points[i];
+            const auto& p2 = curve.points[i + 1];
+
+            // 计算线段方向作为简单的法线近似
+            Vector3 direction = p2 - p1;
+            double length = direction.norm();
+            Vector3 normal = (length > 1e-10) ? direction.normalize() : Vector3{0, 1, 0};
+
+            // 第一个点 (位置 + 法线)
+            m_lineVertices.push_back(p1.x);
+            m_lineVertices.push_back(p1.y);
+            m_lineVertices.push_back(p1.z);
+            m_lineVertices.push_back(normal.x);
+            m_lineVertices.push_back(normal.y);
+            m_lineVertices.push_back(normal.z);
+
+            // 第二个点 (位置 + 法线)
+            m_lineVertices.push_back(p2.x);
+            m_lineVertices.push_back(p2.y);
+            m_lineVertices.push_back(p2.z);
+            m_lineVertices.push_back(normal.x);
+            m_lineVertices.push_back(normal.y);
+            m_lineVertices.push_back(normal.z);
+        }
+    }
+
+    // 更新OpenGL缓冲区
+    if (!m_lineVertices.empty()) {
+        // 创建VAO/VBO（如果尚未创建）
+        if (m_linesVAO == 0) {
+            glGenVertexArrays(1, &m_linesVAO);
+            glGenBuffers(1, &m_linesVBO);
+        }
+
+        glBindVertexArray(m_linesVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, m_linesVBO);
+        glBufferData(GL_ARRAY_BUFFER, m_lineVertices.size() * sizeof(float),
+                     m_lineVertices.data(), GL_STATIC_DRAW);
+
+        // 位置属性 (location = 0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+
+        // 法线属性 (location = 1)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+
+        glBindVertexArray(0);
+
+        logMessage("  Cut buffers updated: " + std::to_string(m_lineVertices.size() / 6) + " vertices");
+    }
 }
 
 void ImGuiTextureMappingGUI::updatePatternsBuffers() {
-    // TODO: Implement patterns buffer update
+    using namespace geometrycentral;
+
+    // 清空现有数据
+    m_patternVertices.clear();
+
+    if (m_pattern3DPaths.empty()) {
+        return;
+    }
+
+    // 为每条图案路径生成线段
+    for (const auto& path : m_pattern3DPaths) {
+        if (path.size() < 2) continue;  // 至少需要2个点才能形成线段
+
+        // 生成连续的线段 (每条线段2个顶点)
+        for (size_t i = 0; i < path.size() - 1; ++i) {
+            const auto& p1 = path[i];
+            const auto& p2 = path[i + 1];
+
+            // 计算线段方向作为简单的法线近似
+            Vector3 direction = p2 - p1;
+            double length = direction.norm();
+            Vector3 normal = (length > 1e-10) ? direction.normalize() : Vector3{0, 1, 0};
+
+            // 第一个点 (位置 + 法线)
+            m_patternVertices.push_back(p1.x);
+            m_patternVertices.push_back(p1.y);
+            m_patternVertices.push_back(p1.z);
+            m_patternVertices.push_back(normal.x);
+            m_patternVertices.push_back(normal.y);
+            m_patternVertices.push_back(normal.z);
+
+            // 第二个点 (位置 + 法线)
+            m_patternVertices.push_back(p2.x);
+            m_patternVertices.push_back(p2.y);
+            m_patternVertices.push_back(p2.z);
+            m_patternVertices.push_back(normal.x);
+            m_patternVertices.push_back(normal.y);
+            m_patternVertices.push_back(normal.z);
+        }
+    }
+
+    // 更新OpenGL缓冲区
+    if (!m_patternVertices.empty()) {
+        // 创建VAO/VBO（如果尚未创建）
+        if (m_patternVAO == 0) {
+            glGenVertexArrays(1, &m_patternVAO);
+            glGenBuffers(1, &m_patternVBO);
+        }
+
+        glBindVertexArray(m_patternVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, m_patternVBO);
+        glBufferData(GL_ARRAY_BUFFER, m_patternVertices.size() * sizeof(float),
+                     m_patternVertices.data(), GL_STATIC_DRAW);
+
+        // 位置属性 (location = 0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+
+        // 法线属性 (location = 1)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+
+        glBindVertexArray(0);
+
+        logMessage("  Pattern buffers updated: " + std::to_string(m_patternVertices.size() / 6) + " vertices");
+    }
 }
 
 void ImGuiTextureMappingGUI::cleanup() {

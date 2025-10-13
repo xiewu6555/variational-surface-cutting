@@ -76,29 +76,80 @@ GeometryAdapter::ConversionResult GeometryAdapter::convertFromGeometryCentral(
         // Step 4: 转换为HalfedgeMesh
         // 注意：HalfedgeMesh构造函数会自动创建Geometry对象
         // 必须使用Euclidean而不是Vector3，因为EulerianShapeOptimizer需要Geometry<Euclidean>*
-        if (options.verbose) std::cout << "  Creating HalfedgeMesh..." << std::endl;
+        if (options.verbose) {
+            std::cout << "  Creating HalfedgeMesh..." << std::endl;
+            std::cout.flush();
+        }
         Geometry<Euclidean>* tempGeometry = nullptr;
         ::HalfedgeMesh* tempMesh = new ::HalfedgeMesh(soupMesh, tempGeometry);
-        if (options.verbose) std::cout << "  HalfedgeMesh created" << std::endl;
+        if (options.verbose) {
+            std::cout << "  HalfedgeMesh created" << std::endl;
+            std::cout.flush();
+        }
         outMesh = tempMesh;  // 转换为void*
         outGeometry = tempGeometry;
 
         // Step 5: 填充统计信息
-        if (options.verbose) std::cout << "  Computing statistics..." << std::endl;
+        if (options.verbose) {
+            std::cout << "  Computing statistics..." << std::endl;
+            std::cout.flush();
+        }
+        if (options.verbose) {
+            std::cout << "    Getting nVertices..." << std::endl;
+            std::cout.flush();
+        }
         result.numVertices = tempMesh->nVertices();
+        if (options.verbose) {
+            std::cout << "    Got " << result.numVertices << " vertices" << std::endl;
+            std::cout << "    Getting nFaces..." << std::endl;
+            std::cout.flush();
+        }
         result.numFaces = tempMesh->nFaces();
+        if (options.verbose) {
+            std::cout << "    Got " << result.numFaces << " faces" << std::endl;
+            std::cout << "    Getting nEdges..." << std::endl;
+            std::cout.flush();
+        }
         result.numEdges = tempMesh->nEdges();
+        if (options.verbose) {
+            std::cout << "    Got " << result.numEdges << " edges" << std::endl;
+            std::cout.flush();
+        }
 
         // Step 6: 验证转换（如果启用）
+        if (options.verbose) {
+            std::cout << "  [DEBUG] About to validate topology (validateTopology=" << options.validateTopology << ")..." << std::endl;
+            std::cout.flush();
+        }
         if (options.validateTopology) {
+            if (options.verbose) {
+                std::cout << "  [DEBUG] Calling validateTopology()..." << std::endl;
+                std::cout.flush();
+            }
             if (!validateTopology(gcMesh, outMesh)) {
                 throw std::runtime_error("拓扑验证失败");
+            }
+            if (options.verbose) {
+                std::cout << "  [DEBUG] validateTopology() completed" << std::endl;
+                std::cout.flush();
             }
         }
 
         // Step 7: 计算几何误差
+        if (options.verbose) {
+            std::cout << "  [DEBUG] About to compute geometric errors (preserveAttributes=" << options.preserveAttributes << ")..." << std::endl;
+            std::cout.flush();
+        }
         if (options.preserveAttributes) {
-            computeGeometricErrors(gcGeometry, outGeometry, result);
+            if (options.verbose) {
+                std::cout << "  [DEBUG] Calling computeGeometricErrors()..." << std::endl;
+                std::cout.flush();
+            }
+            computeGeometricErrors(gcMesh, gcGeometry, outGeometry, result);
+            if (options.verbose) {
+                std::cout << "  [DEBUG] computeGeometricErrors() completed" << std::endl;
+                std::cout.flush();
+            }
         }
 
         result.success = true;
@@ -187,7 +238,7 @@ GeometryAdapter::ConversionResult GeometryAdapter::validateConversion(
 
     // 计算几何误差
     if (result.success) {
-        computeGeometricErrors(originalGeometry, convertedGeometry, result);
+        computeGeometricErrors(originalMesh, originalGeometry, convertedGeometry, result);
 
         // 设置误差阈值
         const double positionTolerance = 1e-6;
@@ -210,13 +261,29 @@ bool GeometryAdapter::validateTopology(
     std::shared_ptr<GeometryTypeMapping::GC_Mesh> mesh1,
     const GeometryTypeMapping::Core_Mesh* mesh2) {
 
+    std::cout << "    [DEBUG] Inside validateTopology()..." << std::endl;
+    std::cout.flush();
+
     // 转换void*到具体类型
+    std::cout << "    [DEBUG] Converting mesh pointer..." << std::endl;
+    std::cout.flush();
     auto* coreM = static_cast<const ::HalfedgeMesh*>(mesh2);
 
     // 基本统计检查
+    std::cout << "    [DEBUG] Checking nVertices..." << std::endl;
+    std::cout.flush();
     if (mesh1->nVertices() != coreM->nVertices()) return false;
+
+    std::cout << "    [DEBUG] Checking nFaces..." << std::endl;
+    std::cout.flush();
     if (mesh1->nFaces() != coreM->nFaces()) return false;
+
+    std::cout << "    [DEBUG] Checking nEdges..." << std::endl;
+    std::cout.flush();
     if (mesh1->nEdges() != coreM->nEdges()) return false;
+
+    std::cout << "    [DEBUG] Topology validation passed" << std::endl;
+    std::cout.flush();
 
     // TODO: 可以添加更深入的拓扑检查
     // 例如：检查每个面的邻接关系等
@@ -228,60 +295,119 @@ bool GeometryAdapter::validateTopology(
  * 计算几何误差
  */
 void GeometryAdapter::computeGeometricErrors(
+    std::shared_ptr<GeometryTypeMapping::GC_Mesh> mesh1,
     std::shared_ptr<GeometryTypeMapping::GC_Geometry> geom1,
     const GeometryTypeMapping::Core_Geometry* geom2,
     ConversionResult& result) {
 
+    std::cout << "    [DEBUG] Inside computeGeometricErrors()..." << std::endl;
+    std::cout.flush();
+
     // 转换void*到具体类型 (去掉const，因为Geometry的方法不是const的)
+    std::cout << "    [DEBUG] Converting geometry pointer..." << std::endl;
+    std::cout.flush();
     auto* coreG = const_cast<Geometry<Euclidean>*>(static_cast<const Geometry<Euclidean>*>(geom2));
+
+    // 关键修复：需要获取mesh的指针，而不是直接访问引用
+    std::cout << "    [DEBUG] Getting mesh pointer from geometry..." << std::endl;
+    std::cout.flush();
+    HalfedgeMesh* coreMesh = coreG->getMesh();
+
+    std::cout << "    [DEBUG] Checking if mesh pointer is null..." << std::endl;
+    std::cout.flush();
+    if (!coreMesh) {
+        std::cerr << "WARNING: Core mesh pointer is null, skipping geometric error computation" << std::endl;
+        result.maxPositionError = 0.0;
+        result.maxEdgeLengthError = 0.0;
+        result.maxAreaError = 0.0;
+        return;
+    }
+
+    std::cout << "    [DEBUG] Mesh pointer is valid, beginning position error computation..." << std::endl;
+    std::cout.flush();
 
     // 计算顶点位置误差
     result.maxPositionError = 0.0;
     size_t vertIdx = 0;
-    for (auto v : geom1->mesh.vertices()) {
-        auto pos1 = geom1->vertexPositions[v];
 
-        // 获取core网格对应顶点
-        // 假设顶点索引对应
-        VertexPtr v2 = coreG->mesh.vertex(vertIdx);
-        Vector3 pos2 = coreG->position(v2);
+    try {
+        for (auto v : mesh1->vertices()) {
+            auto pos1 = geom1->vertexPositions[v];
 
-        double error = std::sqrt(
-            (pos1.x - pos2.x) * (pos1.x - pos2.x) +
-            (pos1.y - pos2.y) * (pos1.y - pos2.y) +
-            (pos1.z - pos2.z) * (pos1.z - pos2.z)
-        );
+            // 安全检查：确保索引在范围内
+            if (vertIdx >= coreMesh->nVertices()) {
+                std::cerr << "WARNING: Vertex index out of range: " << vertIdx << " >= " << coreMesh->nVertices() << std::endl;
+                break;
+            }
 
-        result.maxPositionError = std::max(result.maxPositionError, error);
-        vertIdx++;
+            // 获取core网格对应顶点
+            VertexPtr v2 = coreMesh->vertex(vertIdx);
+            Vector3 pos2 = coreG->position(v2);
+
+            double error = std::sqrt(
+                (pos1.x - pos2.x) * (pos1.x - pos2.x) +
+                (pos1.y - pos2.y) * (pos1.y - pos2.y) +
+                (pos1.z - pos2.z) * (pos1.z - pos2.z)
+            );
+
+            result.maxPositionError = std::max(result.maxPositionError, error);
+            vertIdx++;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR in position error computation: " << e.what() << std::endl;
+        std::cerr << "  Failed at vertex index: " << vertIdx << std::endl;
     }
 
     // 计算边长误差
     result.maxEdgeLengthError = 0.0;
     size_t edgeIdx = 0;
-    for (auto e : geom1->mesh.edges()) {
-        double len1 = geom1->edgeLengths[e];
 
-        EdgePtr e2 = coreG->mesh.edge(edgeIdx);
-        double len2 = coreG->length(e2);
+    try {
+        for (auto e : mesh1->edges()) {
+            double len1 = geom1->edgeLengths[e];
 
-        double error = std::abs(len1 - len2);
-        result.maxEdgeLengthError = std::max(result.maxEdgeLengthError, error);
-        edgeIdx++;
+            // 安全检查：确保索引在范围内
+            if (edgeIdx >= coreMesh->nEdges()) {
+                std::cerr << "WARNING: Edge index out of range: " << edgeIdx << " >= " << coreMesh->nEdges() << std::endl;
+                break;
+            }
+
+            EdgePtr e2 = coreMesh->edge(edgeIdx);
+            double len2 = coreG->length(e2);
+
+            double error = std::abs(len1 - len2);
+            result.maxEdgeLengthError = std::max(result.maxEdgeLengthError, error);
+            edgeIdx++;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR in edge length error computation: " << e.what() << std::endl;
+        std::cerr << "  Failed at edge index: " << edgeIdx << std::endl;
     }
 
     // 计算面积误差
     result.maxAreaError = 0.0;
     size_t faceIdx = 0;
-    for (auto f : geom1->mesh.faces()) {
-        double area1 = geom1->faceAreas[f];
 
-        FacePtr f2 = coreG->mesh.face(faceIdx);
-        double area2 = coreG->area(f2);
+    try {
+        for (auto f : mesh1->faces()) {
+            double area1 = geom1->faceAreas[f];
 
-        double error = std::abs(area1 - area2);
-        result.maxAreaError = std::max(result.maxAreaError, error);
-        faceIdx++;
+            // 安全检查：确保索引在范围内
+            if (faceIdx >= coreMesh->nFaces()) {
+                std::cerr << "WARNING: Face index out of range: " << faceIdx << " >= " << coreMesh->nFaces() << std::endl;
+                break;
+            }
+
+            FacePtr f2 = coreMesh->face(faceIdx);
+            double area2 = coreG->area(f2);
+
+            double error = std::abs(area1 - area2);
+            result.maxAreaError = std::max(result.maxAreaError, error);
+            faceIdx++;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR in area error computation: " << e.what() << std::endl;
+        std::cerr << "  Failed at face index: " << faceIdx << std::endl;
     }
 }
 
