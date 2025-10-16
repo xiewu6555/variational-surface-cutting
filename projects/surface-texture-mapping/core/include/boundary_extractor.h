@@ -108,8 +108,23 @@ public:
         GC_Geometry* gcGeometry,
         Core_Mesh* coreMesh,
         Core_Geometry* coreGeometry,
+        const std::vector<size_t>& coreToGCVertexIndex,
         const ExtractionOptions& options,
         ExtractionResult& outResult
+    );
+
+    // 将core边映射到GC边
+    static std::vector<GC_Edge> mapCoreEdgesToGC(
+        const std::vector<EdgePtr>& coreEdges,
+        Core_Mesh* coreMesh,
+        GC_Mesh* gcMesh,
+        const std::vector<size_t>& coreToGCVertexIndex
+    );
+
+    // 验证边路径连通性
+    static bool validateEdgePath(
+        const std::vector<GC_Edge>& path,
+        GC_Mesh* mesh
     );
 
 private:
@@ -132,19 +147,6 @@ private:
         Core_Mesh* mesh,
         Core_Geometry* geometry,
         int maxSteps
-    );
-
-    // 将core边映射到GC边
-    static std::vector<GC_Edge> mapCoreEdgesToGC(
-        const std::vector<EdgePtr>& coreEdges,
-        Core_Mesh* coreMesh,
-        GC_Mesh* gcMesh
-    );
-
-    // 验证边路径连通性
-    static bool validateEdgePath(
-        const std::vector<GC_Edge>& path,
-        GC_Mesh* mesh
     );
 
     // 计算路径长度

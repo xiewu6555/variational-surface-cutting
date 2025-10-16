@@ -27,6 +27,7 @@ BoundaryExtractor::extractEdgePaths(
     GC_Geometry* gcGeometry,
     Core_Mesh* coreMesh,
     Core_Geometry* coreGeometry,
+    const std::vector<size_t>& coreToGCVertexIndex,
     const ExtractionOptions& options,
     ExtractionResult& outResult) {
 
@@ -38,6 +39,11 @@ BoundaryExtractor::extractEdgePaths(
     }
 
     try {
+        if (coreToGCVertexIndex.empty()) {
+            outResult.errorMessage = "Invalid vertex mapping supplied (empty).";
+            return result;
+        }
+
         double totalSnapError = 0.0;
         int numSnapped = 0;
 
@@ -86,11 +92,11 @@ BoundaryExtractor::extractEdgePaths(
                     // 成功找到不同的中间顶点，分成两段处理
                     // 段1: v1 -> vMid
                     auto path1 = findShortestEdgePath(v1, vMid, coreMesh, coreGeometry, options.maxPathLength);
-                    auto gcPath1 = mapCoreEdgesToGC(path1, coreMesh, gcMesh);
+                    auto gcPath1 = mapCoreEdgesToGC(path1, coreMesh, gcMesh, coreToGCVertexIndex);
 
                     // 段2: vMid -> v2 (注意v2此时等于v1，所以实际是vMid到v1的回路)
                     auto path2 = findShortestEdgePath(vMid, v1, coreMesh, coreGeometry, options.maxPathLength);
-                    auto gcPath2 = mapCoreEdgesToGC(path2, coreMesh, gcMesh);
+                    auto gcPath2 = mapCoreEdgesToGC(path2, coreMesh, gcMesh, coreToGCVertexIndex);
 
                     // 合并两段
                     if (!gcPath1.empty() && validateEdgePath(gcPath1, gcMesh)) {
@@ -125,7 +131,7 @@ BoundaryExtractor::extractEdgePaths(
             }
 
             // Step 3: 映射core边到GC边
-            auto gcEdges = mapCoreEdgesToGC(coreEdges, coreMesh, gcMesh);
+            auto gcEdges = mapCoreEdgesToGC(coreEdges, coreMesh, gcMesh, coreToGCVertexIndex);
 
             if (gcEdges.empty()) {
                 if (options.verbose) {
@@ -292,7 +298,8 @@ std::vector<BoundaryExtractor::GC_Edge>
 BoundaryExtractor::mapCoreEdgesToGC(
     const std::vector<EdgePtr>& coreEdges,
     Core_Mesh* coreMesh,
-    GC_Mesh* gcMesh) {
+    GC_Mesh* gcMesh,
+    const std::vector<size_t>& coreToGCVertexIndex) {
 
     std::vector<GC_Edge> gcEdges;
 
@@ -312,9 +319,23 @@ BoundaryExtractor::mapCoreEdgesToGC(
         size_t idx1 = coreVertexIndex[v1];
         size_t idx2 = coreVertexIndex[v2];
 
+        const size_t invalidIndex = std::numeric_limits<size_t>::max();
+        if (idx1 >= coreToGCVertexIndex.size() || idx2 >= coreToGCVertexIndex.size()) {
+            std::cerr << "[BoundaryExtractor] Warning: Core vertex index out of range while mapping edges." << std::endl;
+            continue;
+        }
+
+        size_t gcIdx1 = coreToGCVertexIndex[idx1];
+        size_t gcIdx2 = coreToGCVertexIndex[idx2];
+
+        if (gcIdx1 == invalidIndex || gcIdx2 == invalidIndex) {
+            std::cerr << "[BoundaryExtractor] Warning: Missing GC vertex mapping for core edge." << std::endl;
+            continue;
+        }
+
         // 在GC网格中找到对应的边
-        GC_Vertex gcV1 = gcMesh->vertex(idx1);
-        GC_Vertex gcV2 = gcMesh->vertex(idx2);
+        GC_Vertex gcV1 = gcMesh->vertex(gcIdx1);
+        GC_Vertex gcV2 = gcMesh->vertex(gcIdx2);
 
         // 查找连接这两个顶点的边
         bool found = false;

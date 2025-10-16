@@ -25,9 +25,8 @@
 
 // 几何适配层
 #include "geometry_adapter.h"
-
-// Core库类型（前向声明）
-class EulerianShapeOptimizer;
+// Core优化器
+#include "eulerian_shape_optimizer.h"
 
 namespace SurfaceTextureMapping {
 
@@ -152,10 +151,14 @@ private:
     );
 
     // Step 4: 提取边界线
-    struct BoundarySegment {
+    struct BoundarySegmentInfo {
         GC_Vector3 start;
         GC_Vector3 end;
+        int segmentType = 0;
         double length = 0.0;
+        std::vector<GC_Vector3> intermediatePoints;
+        const ::BoundarySegment* sourceSegment = nullptr; // 指向原始Eulerian边界段
+        bool reversed = false; // 是否采用反向遍历
     };
 
     struct BoundaryLine {
@@ -164,7 +167,7 @@ private:
         int segmentType;  // BoundarySegment::BType的整数值（0=开放路径，1=闭环）
         double length = 0.0;  // 线段或路径长度
         std::vector<GC_Vector3> fullPath;  // 完整路径点序列（用于可视化）
-        std::vector<BoundarySegment> segmentSequence;  // ⭐ 完整的线段序列（保留几何信息）
+        std::vector<BoundarySegmentInfo> segmentSequence;  // ⭐ 完整的线段序列（保留几何信息）
     };
 
     std::vector<BoundaryLine> extractBoundaryLines(
@@ -174,7 +177,7 @@ private:
 
     // 辅助函数：合并连续的边界线段为路径
     std::vector<BoundaryLine> mergeBoundarySegments(
-        const std::vector<BoundaryLine>& segments,
+        const std::vector<BoundarySegmentInfo>& segments,
         double tolerance
     );
 
@@ -185,6 +188,16 @@ private:
         GC_Geometry* gcGeometry,
         GeometryTypeMapping::Core_Mesh* coreMesh,
         GeometryTypeMapping::Core_Geometry* coreGeometry,
+        const OptimizationParams& params
+    );
+
+    std::vector<std::vector<GC_Edge>> convertBoundariesToEdgePaths(
+        const std::vector<BoundaryLine>& boundaries,
+        GC_Mesh* gcMesh,
+        GC_Geometry* gcGeometry,
+        GeometryTypeMapping::Core_Mesh* coreMesh,
+        GeometryTypeMapping::Core_Geometry* coreGeometry,
+        const std::vector<size_t>& coreToGCVertexIndex,
         const OptimizationParams& params
     );
 
@@ -206,6 +219,11 @@ private:
     // 日志辅助
     void logProgress(const std::string& message, bool verbose);
     void logError(const std::string& message);
+
+    // 顶点索引映射（core <-> GC）
+    std::vector<size_t> gcToCoreVertexIndex_;
+    std::vector<size_t> coreToGCVertexIndex_;
+    std::vector<std::vector<::BoundarySegment>> optimizerBoundarySegments_;
 };
 
 } // namespace SurfaceTextureMapping

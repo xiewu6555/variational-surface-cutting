@@ -20,6 +20,8 @@
 #include <iostream>
 #include <chrono>
 #include <cmath>
+#include <algorithm>
+#include <unordered_map>
 
 namespace SurfaceTextureMapping {
 
@@ -33,6 +35,8 @@ EulerianCutIntegrator::generateCuts(
     const std::vector<GC_Vertex>& conePoints,
     const OptimizationParams& params,
     IntegrationResult& outResult) {
+
+    (void)conePoints; // 当前集成版本尚未使用锥点信息
 
     std::vector<std::vector<GC_Edge>> result;
     outResult.success = false;
@@ -89,7 +93,9 @@ EulerianCutIntegrator::generateCuts(
 
         result = convertBoundariesToEdgePaths(
             boundaries, mesh, geometry,
-            coreMesh, coreGeometry, params
+            coreMesh, coreGeometry,
+            coreToGCVertexIndex_,
+            params
         );
 
         logProgress("  Converted to " + std::to_string(result.size()) + " edge paths", params.verbose);
@@ -141,6 +147,9 @@ bool EulerianCutIntegrator::convertMeshToCore(
         result.errorMessage = "Mesh conversion failed: " + conversionResult.errorMessage;
         return false;
     }
+
+    coreToGCVertexIndex_ = conversionResult.coreToGCVertexIndex;
+    gcToCoreVertexIndex_ = conversionResult.gcToCoreVertexIndex;
 
     // 记录转换误差
     result.conversionPositionError = conversionResult.maxPositionError;
@@ -368,8 +377,18 @@ EulerianCutIntegrator::createOptimizer(
     std::cout << "  Configuring optimizer parameters..." << std::endl;
     optimizer->weightLengthRegularization = params.weightLengthRegularization;
     optimizer->weightHenckyDistortion = params.weightHenckyDistortion;
+    optimizer->weightDirichletDistortion = params.weightDirichletDistortion;
+    optimizer->weightBilapRegularization = params.weightBilapRegularization;
+    optimizer->weightVisibility = params.weightVisibility;
+    optimizer->stepSizeParam = params.stepSizeParam;
+    // 关键：启用局部尺度长度正则，使边界有非零梯度（不依赖贴片内部点）
+    optimizer->localScaleLengthRegularization = true;
     std::cout << "    Length regularization weight: " << optimizer->weightLengthRegularization << std::endl;
     std::cout << "    Hencky distortion weight: " << optimizer->weightHenckyDistortion << std::endl;
+    std::cout << "    Bilap regularization weight: " << optimizer->weightBilapRegularization << std::endl;
+    std::cout << "    Dirichlet distortion weight: " << optimizer->weightDirichletDistortion << std::endl;
+    std::cout << "    Visibility weight: " << optimizer->weightVisibility << std::endl;
+    std::cout << "    Step size param: " << optimizer->stepSizeParam << std::endl;
 
     // ========== 初始化优化器状态（使用normal clustering） ==========
     // 调用normalClusterMSDF - 确保使用正确的函数签名
@@ -467,7 +486,25 @@ void EulerianCutIntegrator::runOptimization(
         } catch (const std::exception& e) {
             std::cerr << "[DEBUG ERROR] doStep() threw exception: " << e.what() << std::endl;
             std::cerr << "[DEBUG ERROR] Failed at iteration " << i << std::endl;
-            throw;
+            // 自愈重试：首轮失败时，减小步长并重试，最多3次（仍为Eulerian算法）
+            bool recovered = false;
+            double origStep = optimizer.stepSizeParam;
+            for (int retry = 0; retry < 3 && i == 0 && !recovered; ++retry) {
+                optimizer.stepSizeParam *= 0.5; // 更保守的步长
+                std::cerr << "[RETRY] Reducing stepSizeParam to " << optimizer.stepSizeParam << " and retrying doStep()..." << std::endl;
+                try {
+                    optimizer.doStep();
+                    recovered = true;
+                    std::cerr << "[RETRY] doStep() succeeded after step reduction" << std::endl;
+                } catch (...) {
+                    // continue
+                }
+            }
+            if (!recovered) {
+                // 恢复原步长并抛出
+                optimizer.stepSizeParam = origStep;
+                throw;
+            }
         } catch (...) {
             std::cerr << "[DEBUG ERROR] doStep() threw unknown exception" << std::endl;
             std::cerr << "[DEBUG ERROR] Failed at iteration " << i << std::endl;
@@ -516,39 +553,67 @@ void EulerianCutIntegrator::runOptimization(
 
 /**
  * Step 4: 提取边界线
+* 切割线几何侧问题（根因）
+  - 边界段逐段独立贴边，未先拼成连续折线
+      - eulerian_cut_integrator.cpp::extractBoundaryLines()只是把优化器返回的边界线段 optimizer.getBoundaryLines() 逐段
+  塞进 BoundaryLine，没有按端点连通把“同一条边界的所有小段”串成一条有序折线，BoundaryLine::segmentSequence 也没有被真正
+  填充/使用。
+      - 随后 convertBoundariesToEdgePaths() 里按段调用 BoundaryExtractor::extractEdgePaths()：每段只把两个端点各自“snap
+  到最近网格顶点”，再跑一次 Dijkstra 找“最短边路径”。段与段之间既无顺序约束，也不保证端点对齐同一顶点，最后只是简单拼接/
+  串联（见“合并”部分仅做了 insert，没有按端点重排/翻转保证连通）。结果就是每一小段都朝自己最近的边网走，整体就断裂、偏离
+  目标曲线。
+  - 边路径合并未保证顺序与连通性
+      - convertBoundariesToEdgePaths() 末尾“合并 edge paths 回到 boundary”直接把多段 path 连接到 mergedPath，没有按“上段
+  尾顶点 == 下段首顶点”重排/必要时反转，导致最终路径顺序错乱、断裂。
+  - 端点“就近贴顶点”对窄特征不鲁棒
+      - boundary_extractor.cpp::findNearestVertex() 采用全局最近点，未限制到“靠近原边界段的邻域”，在特征密集处常把端点吸
+  到错误一侧，之后 Dijkstra 就会横跨错误面群，出现你图中“离开表面正确边界”的折返/游离。
  */
 std::vector<EulerianCutIntegrator::BoundaryLine>
 EulerianCutIntegrator::extractBoundaryLines(
     EulerianShapeOptimizer& optimizer,  // 移除const
     const OptimizationParams& params) {
 
-    std::vector<BoundaryLine> boundaries;
+    optimizerBoundarySegments_.clear();
+    const auto& rawSegmentsFromOptimizer = optimizer.getBoundarySegments();
+    optimizerBoundarySegments_ = rawSegmentsFromOptimizer; // 拷贝一份，保持生命周期
 
-    // 从优化器获取边界线
-    auto rawBoundaries = optimizer.getBoundaryLines();
-
-    std::cout << "  Raw boundary segments from optimizer: " << rawBoundaries.size() << std::endl;
-
-    // 转换为BoundaryLine格式
-    for (const auto& segment : rawBoundaries) {
-        BoundaryLine boundary;
-        boundary.start = GC_Vector3{segment[0].x, segment[0].y, segment[0].z};
-        boundary.end = GC_Vector3{segment[1].x, segment[1].y, segment[1].z};
-        boundary.segmentType = 0;  // 默认类型
-
-        // 计算线段长度
-        double dx = segment[1].x - segment[0].x;
-        double dy = segment[1].y - segment[0].y;
-        double dz = segment[1].z - segment[0].z;
-        boundary.length = std::sqrt(dx*dx + dy*dy + dz*dz);
-
-        boundaries.push_back(boundary);
+    size_t totalSegments = 0;
+    for (const auto& regionSegments : optimizerBoundarySegments_) {
+        totalSegments += regionSegments.size();
     }
+
+    std::vector<BoundarySegmentInfo> rawSegments;
+    rawSegments.reserve(totalSegments);
+
+    for (const auto& regionSegments : optimizerBoundarySegments_) {
+        for (const auto& seg : regionSegments) {
+            BoundarySegmentInfo info;
+            Vector3 start = optimizer.startPoint(seg);
+            Vector3 end = optimizer.endPoint(seg);
+
+            info.start = GC_Vector3{start.x, start.y, start.z};
+            info.end = GC_Vector3{end.x, end.y, end.z};
+            info.length = optimizer.boundaryLength(seg);
+            info.segmentType = static_cast<int>(seg.type);
+            if (seg.type == BType::TRIPLE) {
+                info.intermediatePoints.push_back(
+                    GC_Vector3{seg.triplePoint.x, seg.triplePoint.y, seg.triplePoint.z}
+                );
+            }
+            info.sourceSegment = &seg;
+
+            rawSegments.push_back(std::move(info));
+        }
+    }
+
+    std::cout << "  Raw boundary segments from optimizer: " << rawSegments.size() << std::endl;
 
     // ========== 关键修复：合并连续的线段为路径 ==========
     std::cout << "  Merging boundary segments into continuous paths..." << std::endl;
 
-    std::vector<BoundaryLine> mergedBoundaries = mergeBoundarySegments(boundaries, 1e-6);
+    double mergeTol = std::max(1e-6, params.edgeSnapTolerance);
+    std::vector<BoundaryLine> mergedBoundaries = mergeBoundarySegments(rawSegments, mergeTol);
 
     std::cout << "  After merging: " << mergedBoundaries.size() << " boundary paths" << std::endl;
 
@@ -574,7 +639,7 @@ EulerianCutIntegrator::extractBoundaryLines(
  */
 std::vector<EulerianCutIntegrator::BoundaryLine>
 EulerianCutIntegrator::mergeBoundarySegments(
-    const std::vector<BoundaryLine>& segments,
+    const std::vector<BoundarySegmentInfo>& segments,
     double tolerance) {
 
     if (segments.empty()) return {};
@@ -590,17 +655,22 @@ EulerianCutIntegrator::mergeBoundarySegments(
         return std::sqrt(dx*dx + dy*dy + dz*dz);
     };
 
+    auto reverseSegment = [](const BoundarySegmentInfo& segment) {
+        BoundarySegmentInfo reversed = segment;
+        std::swap(reversed.start, reversed.end);
+        std::reverse(reversed.intermediatePoints.begin(), reversed.intermediatePoints.end());
+        reversed.sourceSegment = segment.sourceSegment;
+        reversed.reversed = !segment.reversed;
+        return reversed;
+    };
+
     // 贪心分组：从每个未使用的线段开始，找到连续的线段序列
     for (size_t i = 0; i < segments.size(); ++i) {
         if (used[i]) continue;
 
         // 开始新路径 - 保存完整的线段序列，而不只是端点
-        std::vector<BoundarySegment> pathSegments;
-        BoundarySegment firstSeg;
-        firstSeg.start = segments[i].start;
-        firstSeg.end = segments[i].end;
-        firstSeg.length = segments[i].length;
-        pathSegments.push_back(firstSeg);
+        std::vector<BoundarySegmentInfo> pathSegments;
+        pathSegments.push_back(segments[i]);
         used[i] = true;
 
         GC_Vector3 currentEnd = segments[i].end;
@@ -616,9 +686,10 @@ EulerianCutIntegrator::mergeBoundarySegments(
             // 查找最近的未使用线段
             for (size_t j = 0; j < segments.size(); ++j) {
                 if (used[j]) continue;
+                const auto& candidate = segments[j];
 
-                double distToStart = pointDistance(currentEnd, segments[j].start);
-                double distToEnd = pointDistance(currentEnd, segments[j].end);
+                double distToStart = pointDistance(currentEnd, candidate.start);
+                double distToEnd = pointDistance(currentEnd, candidate.end);
 
                 if (distToStart < bestDist) {
                     bestDist = distToStart;
@@ -633,16 +704,12 @@ EulerianCutIntegrator::mergeBoundarySegments(
 
             if (bestIdx >= 0) {
                 // 添加找到的线段到路径
-                BoundarySegment segmentToAdd;
+                BoundarySegmentInfo segmentToAdd;
                 if (needReverse) {
                     // 反转线段方向
-                    segmentToAdd.start = segments[bestIdx].end;
-                    segmentToAdd.end = segments[bestIdx].start;
-                    segmentToAdd.length = segments[bestIdx].length;
+                    segmentToAdd = reverseSegment(segments[bestIdx]);
                 } else {
-                    segmentToAdd.start = segments[bestIdx].start;
-                    segmentToAdd.end = segments[bestIdx].end;
-                    segmentToAdd.length = segments[bestIdx].length;
+                    segmentToAdd = segments[bestIdx];
                 }
 
                 pathSegments.push_back(segmentToAdd);
@@ -662,6 +729,9 @@ EulerianCutIntegrator::mergeBoundarySegments(
         pathPoints.push_back(pathSegments[0].start);
 
         for (const auto& seg : pathSegments) {
+            for (const auto& mid : seg.intermediatePoints) {
+                pathPoints.push_back(mid);
+            }
             pathPoints.push_back(seg.end);
             totalLength += seg.length;
         }
@@ -705,111 +775,140 @@ EulerianCutIntegrator::convertBoundariesToEdgePaths(
     GeometryTypeMapping::Core_Geometry* coreGeometry,
     const OptimizationParams& params) {
 
-    // ========== 关键修复：使用完整的线段序列 ==========
-    // 不再丢弃中间几何信息，使用segmentSequence保存的完整线段列表
-    std::vector<BoundaryExtractor::BoundaryLine> extractorBoundaries;
-    std::vector<size_t> segmentsPerBoundary;  // 记录每个boundary有多少segments
-
-    for (const auto& boundary : boundaries) {
-        size_t segmentCount = 0;
-
-        if (!boundary.segmentSequence.empty()) {
-            // ⭐ 使用保存的完整线段序列（保留了所有几何信息）
-            segmentCount = boundary.segmentSequence.size();
-            std::cout << "  Path with " << segmentCount << " segments"
-                     << " (length=" << boundary.length << ")" << std::endl;
-
-            for (const auto& seg : boundary.segmentSequence) {
-                BoundaryExtractor::BoundaryLine extractorSegment;
-                extractorSegment.start = seg.start;
-                extractorSegment.end = seg.end;
-                extractorSegment.segmentType = boundary.segmentType;  // 使用路径的类型
-                extractorSegment.length = seg.length;
-                extractorBoundaries.push_back(extractorSegment);
-            }
-        } else {
-            // 回退：单个线段（原始未合并的情况）
-            segmentCount = 1;
-            BoundaryExtractor::BoundaryLine extractorBoundary;
-            extractorBoundary.start = boundary.start;
-            extractorBoundary.end = boundary.end;
-            extractorBoundary.segmentType = boundary.segmentType;
-            extractorBoundary.length = boundary.length;
-            extractorBoundaries.push_back(extractorBoundary);
-        }
-
-        segmentsPerBoundary.push_back(segmentCount);
-    }
-
-    std::cout << "  Total boundaries (paths): " << boundaries.size() << std::endl;
-    std::cout << "  Total segments to extract: " << extractorBoundaries.size() << std::endl;
-
-    // 使用BoundaryExtractor进行转换
-    BoundaryExtractor::ExtractionOptions options;
-    options.snapTolerance = params.edgeSnapTolerance;
-    options.useGeodesicPaths = params.useGeodesicPaths;
-    options.verbose = params.verbose;
-
-    BoundaryExtractor::ExtractionResult extractResult;
-
-    // 显式类型转换：void* -> 具体Core类型
-    auto* coreM = static_cast<BoundaryExtractor::Core_Mesh*>(coreMesh);
-    auto* coreG = static_cast<BoundaryExtractor::Core_Geometry*>(coreGeometry);
-
-    auto edgePaths = BoundaryExtractor::extractEdgePaths(
-        extractorBoundaries, gcMesh, gcGeometry,
-        coreM, coreG,
-        options, extractResult
+    return convertBoundariesToEdgePaths(
+        boundaries, gcMesh, gcGeometry,
+        coreMesh, coreGeometry,
+        coreToGCVertexIndex_,
+        params
     );
+}
 
-    if (!extractResult.success) {
-        logError("Boundary extraction failed: " + extractResult.errorMessage);
-        // 返回空结果，调用者会回退到占位符
+std::vector<std::vector<EulerianCutIntegrator::GC_Edge>>
+EulerianCutIntegrator::convertBoundariesToEdgePaths(
+    const std::vector<BoundaryLine>& boundaries,
+    GC_Mesh* gcMesh,
+    GC_Geometry* gcGeometry,
+    GeometryTypeMapping::Core_Mesh* coreMesh,
+    GeometryTypeMapping::Core_Geometry* coreGeometry,
+    const std::vector<size_t>& coreToGCVertexIndex,
+    const OptimizationParams& params) {
+
+    (void)gcGeometry;
+    (void)coreGeometry;
+
+    if (coreToGCVertexIndex.empty()) {
+        logError("Vertex mapping not initialized; aborting edge path conversion.");
         return {};
     }
 
-    if (params.verbose) {
-        logProgress("  Extracted " + std::to_string(extractResult.numEdgesExtracted) + " edges", true);
-        logProgress("  Average snap error: " + std::to_string(extractResult.averageSnapError), true);
+    auto* coreM = static_cast<BoundaryExtractor::Core_Mesh*>(coreMesh);
+
+    if (coreM == nullptr) {
+        logError("Core mesh pointer is null; cannot convert boundaries.");
+        return {};
     }
 
-    // ========== 关键修复：合并edge paths回到原始boundary边界 ==========
-    // BoundaryExtractor返回的edge paths与input segments一一对应
-    // 我们需要将属于同一个boundary的多个edge paths合并成一个
-    std::vector<std::vector<GC_Edge>> mergedEdgePaths;
-    size_t edgePathIndex = 0;
-
-    std::cout << "  Merging edge paths back to boundaries..." << std::endl;
-
-    for (size_t boundaryIdx = 0; boundaryIdx < segmentsPerBoundary.size(); ++boundaryIdx) {
-        size_t numSegments = segmentsPerBoundary[boundaryIdx];
-
-        if (edgePathIndex + numSegments > edgePaths.size()) {
-            std::cerr << "  Warning: Edge path count mismatch for boundary " << boundaryIdx << std::endl;
-            break;
+    auto collectCoreEdges = [&](const BoundarySegmentInfo& segInfo) {
+        std::vector<EdgePtr> edges;
+        if (!segInfo.sourceSegment) {
+            return edges;
         }
 
-        // 合并这个boundary的所有edge paths
-        std::vector<GC_Edge> mergedPath;
-        for (size_t i = 0; i < numSegments; ++i) {
-            const auto& path = edgePaths[edgePathIndex + i];
-            // 将路径的边添加到合并路径中
-            mergedPath.insert(mergedPath.end(), path.begin(), path.end());
+        const ::BoundarySegment& source = *segInfo.sourceSegment;
+        HalfedgePtr current = segInfo.reversed ? source.heEnd : source.heStart;
+        HalfedgePtr target = segInfo.reversed ? source.heStart : source.heEnd;
+
+        if (current == nullptr) {
+            return edges;
         }
 
-        if (!mergedPath.empty()) {
-            mergedEdgePaths.push_back(mergedPath);
-            std::cout << "    Boundary " << boundaryIdx << ": merged "
-                     << numSegments << " edge paths into 1 path with "
-                     << mergedPath.size() << " edges" << std::endl;
+        const size_t guardLimit = coreM->nHalfedges() + 1;
+        size_t guard = 0;
+
+        auto appendEdge = [&](EdgePtr e) {
+            if (e == nullptr) return;
+            if (edges.empty() || edges.back() != e) {
+                edges.push_back(e);
+            }
+        };
+
+        appendEdge(current.edge());
+
+        while (!(current == target) && guard < guardLimit) {
+            current = segInfo.reversed ? current.prev() : current.next();
+            if (current == nullptr) {
+                break;
+            }
+            appendEdge(current.edge());
+            ++guard;
         }
 
-        edgePathIndex += numSegments;
+        if (!(current == target)) {
+            std::cerr << "[EulerianCutIntegrator] Warning: Failed to trace boundary segment along halfedges; segment may be degenerate." << std::endl;
+        }
+
+        return edges;
+    };
+
+    std::vector<std::vector<GC_Edge>> gcEdgePaths;
+    gcEdgePaths.reserve(boundaries.size());
+
+    size_t boundaryIdx = 0;
+    for (const auto& boundary : boundaries) {
+        std::vector<EdgePtr> coreEdges;
+        for (const auto& seg : boundary.segmentSequence) {
+            auto segmentEdges = collectCoreEdges(seg);
+            if (segmentEdges.empty()) {
+                continue;
+            }
+
+            if (!coreEdges.empty() && !segmentEdges.empty() && coreEdges.back() == segmentEdges.front()) {
+                segmentEdges.erase(segmentEdges.begin());
+            }
+            coreEdges.insert(coreEdges.end(), segmentEdges.begin(), segmentEdges.end());
+        }
+
+        if (coreEdges.empty()) {
+            if (params.verbose) {
+                std::cerr << "[EulerianCutIntegrator] Warning: Boundary " << boundaryIdx << " produced no core edges." << std::endl;
+            }
+            ++boundaryIdx;
+            continue;
+        }
+
+        // 去除连续重复的边，保持路径紧凑
+        std::vector<EdgePtr> deduped;
+        deduped.reserve(coreEdges.size());
+        for (const auto& e : coreEdges) {
+            if (deduped.empty() || deduped.back() != e) {
+                deduped.push_back(e);
+            }
+        }
+
+        auto gcPath = BoundaryExtractor::mapCoreEdgesToGC(
+            deduped,
+            coreM,
+            gcMesh,
+            coreToGCVertexIndex
+        );
+
+        if (gcPath.empty()) {
+            std::cerr << "[EulerianCutIntegrator] Warning: Failed to map core edges to GC edges for boundary "
+                      << boundaryIdx << std::endl;
+            ++boundaryIdx;
+            continue;
+        }
+
+        if (!BoundaryExtractor::validateEdgePath(gcPath, gcMesh)) {
+            std::cerr << "[EulerianCutIntegrator] Warning: GC edge path not contiguous for boundary "
+                      << boundaryIdx << std::endl;
+        }
+
+        gcEdgePaths.push_back(std::move(gcPath));
+        ++boundaryIdx;
     }
 
-    std::cout << "  Final merged edge paths: " << mergedEdgePaths.size() << std::endl;
-
-    return mergedEdgePaths;
+    return gcEdgePaths;
 }
 
 /**

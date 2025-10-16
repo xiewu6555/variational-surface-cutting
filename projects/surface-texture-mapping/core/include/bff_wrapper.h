@@ -12,10 +12,11 @@
 namespace SurfaceTextureMapping {
 
 // 类型别名 - 避免using namespace导致的命名冲突
-using HalfedgeMesh = geometrycentral::surface::ManifoldSurfaceMesh;
-using VertexPositionGeometry = geometrycentral::surface::VertexPositionGeometry;
-using Vertex = geometrycentral::surface::Vertex;
-using Edge = geometrycentral::surface::Edge;
+namespace gc = geometrycentral::surface;
+using HalfedgeMesh = gc::ManifoldSurfaceMesh;
+using VertexPositionGeometry = gc::VertexPositionGeometry;
+using Vertex = gc::Vertex;
+using Edge = gc::Edge;
 using Vector2 = geometrycentral::Vector2;
 
 // BFF UV展开结果

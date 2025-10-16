@@ -3326,6 +3326,11 @@ std::vector<std::array<Vector3, 2>> EulerianShapeOptimizer::getBoundaryLines() {
     return lines;
 }
 
+const std::vector<std::vector<BoundarySegment>>& EulerianShapeOptimizer::getBoundarySegments() {
+    ensureHaveBoundaryGeometry();
+    return boundarySegments;
+}
+
 VertexData<Eigen::VectorXd> EulerianShapeOptimizer::fixed2Dynamic(const VertexData<LabelVec>& input) {
     VertexData<Eigen::VectorXd> result(mesh);
     for(VertexPtr v : mesh->vertices()) {

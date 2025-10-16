@@ -19,6 +19,8 @@
 #include <cmath>
 #include <algorithm>
 #include <tuple>
+#include <unordered_map>
+#include <limits>
 
 namespace SurfaceTextureMapping {
 
@@ -88,6 +90,93 @@ GeometryAdapter::ConversionResult GeometryAdapter::convertFromGeometryCentral(
         }
         outMesh = tempMesh;  // 转换为void*
         outGeometry = tempGeometry;
+
+        // Step 4.5: 构建GC与core顶点索引映射
+        struct QuantKey {
+            long long x;
+            long long y;
+            long long z;
+
+            bool operator==(const QuantKey& other) const noexcept {
+                return x == other.x && y == other.y && z == other.z;
+            }
+        };
+        struct QuantKeyHash {
+            size_t operator()(const QuantKey& key) const noexcept {
+                size_t h = std::hash<long long>{}(key.x);
+                h ^= std::hash<long long>{}(key.y) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+                h ^= std::hash<long long>{}(key.z) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+                return h;
+            }
+        };
+
+        const double quantScale = 1e9;
+        auto quantizeCoord = [quantScale](double value) -> long long {
+            return static_cast<long long>(std::llround(value * quantScale));
+        };
+
+        using IndexBucket = std::vector<size_t>;
+        std::unordered_map<QuantKey, IndexBucket, QuantKeyHash> gcPositionBuckets;
+        gcPositionBuckets.reserve(vertexPositions.size());
+
+        for (size_t idx = 0; idx < vertexPositions.size(); ++idx) {
+            const Vector3& pos = vertexPositions[idx];
+            QuantKey key{quantizeCoord(pos.x), quantizeCoord(pos.y), quantizeCoord(pos.z)};
+            gcPositionBuckets[key].push_back(idx);
+        }
+
+        const size_t invalidIndex = std::numeric_limits<size_t>::max();
+        result.coreToGCVertexIndex.assign(tempMesh->nVertices(), invalidIndex);
+        result.gcToCoreVertexIndex.assign(vertexPositions.size(), invalidIndex);
+
+        size_t coreIdx = 0;
+        for (VertexPtr v : tempMesh->vertices()) {
+            Vector3 corePos = tempGeometry->position(v);
+            QuantKey key{quantizeCoord(corePos.x), quantizeCoord(corePos.y), quantizeCoord(corePos.z)};
+
+            size_t gcIndex = invalidIndex;
+            auto it = gcPositionBuckets.find(key);
+            if (it != gcPositionBuckets.end() && !it->second.empty()) {
+                gcIndex = it->second.back();
+                it->second.pop_back();
+            } else {
+                double bestDist = std::numeric_limits<double>::max();
+                for (size_t candidate = 0; candidate < vertexPositions.size(); ++candidate) {
+                    const Vector3& candidatePos = vertexPositions[candidate];
+                    double dx = candidatePos.x - corePos.x;
+                    double dy = candidatePos.y - corePos.y;
+                    double dz = candidatePos.z - corePos.z;
+                    double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        gcIndex = candidate;
+                    }
+                }
+                if (gcIndex == invalidIndex && options.verbose) {
+                    std::cerr << "  [WARNING] Failed to match core vertex to GC vertex during mapping." << std::endl;
+                }
+            }
+
+            if (gcIndex != invalidIndex) {
+                result.coreToGCVertexIndex[coreIdx] = gcIndex;
+                if (result.gcToCoreVertexIndex[gcIndex] == invalidIndex) {
+                    result.gcToCoreVertexIndex[gcIndex] = coreIdx;
+                } else if (options.verbose) {
+                    std::cerr << "  [WARNING] GC vertex " << gcIndex << " already mapped; duplicate assignment detected." << std::endl;
+                }
+            }
+            coreIdx++;
+        }
+
+        bool mappingComplete = std::all_of(
+            result.coreToGCVertexIndex.begin(),
+            result.coreToGCVertexIndex.end(),
+            [invalidIndex](size_t value) { return value != invalidIndex; }
+        );
+
+        if (!mappingComplete && options.verbose) {
+            std::cerr << "  [WARNING] Incomplete GC↔core vertex mapping detected; results may need tolerance tuning." << std::endl;
+        }
 
         // Step 5: 填充统计信息
         if (options.verbose) {

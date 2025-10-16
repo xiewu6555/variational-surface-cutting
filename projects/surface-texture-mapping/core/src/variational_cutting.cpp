@@ -16,6 +16,15 @@
 
 namespace SurfaceTextureMapping {
 
+// Type aliases to disambiguate between Core and geometry-central types
+using GCVertex = geometrycentral::surface::Vertex;
+using GCHalfedge = geometrycentral::surface::Halfedge;
+using GCEdge = geometrycentral::surface::Edge;
+using GCFace = geometrycentral::surface::Face;
+using GCBoundaryLoop = geometrycentral::surface::BoundaryLoop;
+using GCVector2 = geometrycentral::Vector2;
+using GCVector3 = geometrycentral::Vector3;
+
 // VariationalCutter实现
 
 void VariationalCutter::setMesh(std::shared_ptr<SurfaceMesh> mesh,
@@ -61,7 +70,7 @@ VariationalCutter::computeOptimalCuts(const CuttingParams& params) {
     optParams.verbose = true;
 
     // 锥点（暂时为空，未来可从高曲率点检测）
-    std::vector<Vertex> conePoints;
+    std::vector<GCVertex> conePoints;
 
     // 调用真实算法！
     EulerianCutIntegrator::IntegrationResult result;
@@ -114,11 +123,11 @@ VariationalCutter::computeOptimalCuts(const CuttingParams& params) {
         cut.totalLength = 0.0;
 
         // 沿边路径提取顶点位置
-        std::set<Vertex> visitedVertices;
+        std::set<GCVertex> visitedVertices;
         for (const auto& edge : edgePath) {
-            Halfedge he = edge.halfedge();
-            Vertex v1 = he.tailVertex();
-            Vertex v2 = he.tipVertex();
+            GCHalfedge he = edge.halfedge();
+            GCVertex v1 = he.tailVertex();
+            GCVertex v2 = he.tipVertex();
 
             // 添加起点（避免重复）
             if (visitedVertices.find(v1) == visitedVertices.end()) {
@@ -135,7 +144,7 @@ VariationalCutter::computeOptimalCuts(const CuttingParams& params) {
 
         // 计算总长度
         for (size_t i = 1; i < cut.points.size(); ++i) {
-            Vector3 diff = cut.points[i] - cut.points[i-1];
+            GCVector3 diff = cut.points[i] - cut.points[i-1];
             cut.totalLength += diff.norm();
         }
 
@@ -174,8 +183,8 @@ VariationalCutter::computeOptimalCutsFallback(const CuttingParams& params) {
         std::cout << "  Mesh has boundary, using boundary loops as cuts" << std::endl;
 
         // 收集所有边界循环
-        std::set<BoundaryLoop> processedLoops;
-        for (BoundaryLoop bl : mesh_->boundaryLoops()) {
+        std::set<GCBoundaryLoop> processedLoops;
+        for (GCBoundaryLoop bl : mesh_->boundaryLoops()) {
             if (processedLoops.count(bl)) continue;
             processedLoops.insert(bl);
 
@@ -183,21 +192,21 @@ VariationalCutter::computeOptimalCutsFallback(const CuttingParams& params) {
             double totalLength = 0.0;
 
             // 沿边界循环提取点
-            for (Halfedge he : bl.adjacentHalfedges()) {
-                Vertex v = he.tailVertex();
-                Vector3 pos = geometry_->vertexPositions[v];
+            for (GCHalfedge he : bl.adjacentHalfedges()) {
+                GCVertex v = he.tailVertex();
+                GCVector3 pos = geometry_->vertexPositions[v];
                 cut.points.push_back(pos);
 
                 // 计算边长
                 if (cut.points.size() > 1) {
-                    Vector3 diff = cut.points.back() - cut.points[cut.points.size()-2];
+                    GCVector3 diff = cut.points.back() - cut.points[cut.points.size()-2];
                     totalLength += diff.norm();
                 }
             }
 
             // 闭合循环
             if (!cut.points.empty()) {
-                Vector3 diff = cut.points[0] - cut.points.back();
+                GCVector3 diff = cut.points[0] - cut.points.back();
                 totalLength += diff.norm();
                 cut.points.push_back(cut.points[0]);
             }
@@ -220,15 +229,15 @@ VariationalCutter::computeOptimalCutsFallback(const CuttingParams& params) {
         geometry_->requireVertexGaussianCurvatures();
 
         // 找到高曲率顶点
-        std::vector<Vertex> highCurvatureVertices;
+        std::vector<GCVertex> highCurvatureVertices;
         double maxAbsCurvature = 0.0;
-        for (Vertex v : mesh_->vertices()) {
+        for (GCVertex v : mesh_->vertices()) {
             double curvature = std::abs(geometry_->vertexGaussianCurvatures[v]);
             maxAbsCurvature = std::max(maxAbsCurvature, curvature);
         }
 
         double curvatureThreshold = maxAbsCurvature * 0.6;
-        for (Vertex v : mesh_->vertices()) {
+        for (GCVertex v : mesh_->vertices()) {
             if (std::abs(geometry_->vertexGaussianCurvatures[v]) > curvatureThreshold) {
                 highCurvatureVertices.push_back(v);
             }
@@ -242,10 +251,10 @@ VariationalCutter::computeOptimalCutsFallback(const CuttingParams& params) {
 
         for (int i = 0; i < numCutsToGenerate && i < (int)highCurvatureVertices.size(); ++i) {
             CutCurve cut;
-            Vertex startVertex = highCurvatureVertices[i * highCurvatureVertices.size() / numCutsToGenerate];
+            GCVertex startVertex = highCurvatureVertices[i * highCurvatureVertices.size() / numCutsToGenerate];
 
-            Vertex currentVertex = startVertex;
-            std::set<Vertex> visited;
+            GCVertex currentVertex = startVertex;
+            std::set<GCVertex> visited;
             double totalLength = 0.0;
 
             int maxPathLength = 50;
@@ -253,17 +262,17 @@ VariationalCutter::computeOptimalCutsFallback(const CuttingParams& params) {
                 if (visited.count(currentVertex)) break;
                 visited.insert(currentVertex);
 
-                Vector3 pos = geometry_->vertexPositions[currentVertex];
+                GCVector3 pos = geometry_->vertexPositions[currentVertex];
                 cut.points.push_back(pos);
 
                 if (cut.points.size() > 1) {
-                    Vector3 diff = cut.points.back() - cut.points[cut.points.size()-2];
+                    GCVector3 diff = cut.points.back() - cut.points[cut.points.size()-2];
                     totalLength += diff.norm();
                 }
 
-                Vertex nextVertex = currentVertex;
+                GCVertex nextVertex = currentVertex;
                 double maxNeighborCurvature = -1e10;
-                for (Vertex neighbor : currentVertex.adjacentVertices()) {
+                for (GCVertex neighbor : currentVertex.adjacentVertices()) {
                     if (!visited.count(neighbor)) {
                         double curvature = std::abs(geometry_->vertexGaussianCurvatures[neighbor]);
                         if (curvature > maxNeighborCurvature) {

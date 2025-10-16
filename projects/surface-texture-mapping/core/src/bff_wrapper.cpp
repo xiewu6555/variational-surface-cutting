@@ -15,10 +15,20 @@
 #include "eulerian_cut_integrator.h"
 
 namespace SurfaceTextureMapping {
-
-// 在命名空间内部使用using声明，避免与Core库的全局类型冲突
-using namespace geometrycentral;
-using namespace geometrycentral::surface;
+namespace gc = geometrycentral::surface;
+using GCVector2 = geometrycentral::Vector2;
+using GCVector3 = geometrycentral::Vector3;
+using GCMesh = gc::ManifoldSurfaceMesh;
+using GCGeometry = gc::VertexPositionGeometry;
+using GCVertex = gc::Vertex;
+using GCEdge = gc::Edge;
+using GCHalfedge = gc::Halfedge;
+using GCCorner = gc::Corner;
+using GCCornerData = gc::CornerData<GCVector2>;
+using GCVertexIndexData = gc::VertexData<size_t>;
+using GCVertexScalarData = gc::VertexData<double>;
+using GCEdgeDataDouble = gc::EdgeData<double>;
+using GCFace = gc::Face;
 
 /**
  * Real BFF Implementation using geometry-central
@@ -26,18 +36,18 @@ using namespace geometrycentral::surface;
  */
 class BFFWrapper::Implementation {
 public:
-    ManifoldSurfaceMesh* mesh = nullptr;
-    VertexPositionGeometry* geometry = nullptr;
+    GCMesh* mesh = nullptr;
+    GCGeometry* geometry = nullptr;
 
     // BFF algorithm state
     Eigen::SparseMatrix<double> laplacianMatrix;
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
 
-    VertexData<size_t> vertexIndices;
-    VertexData<double> scaleFactors;
+    GCVertexIndexData vertexIndices;
+    GCVertexScalarData scaleFactors;
 
     // Results
-    CornerData<Vector2> uvCoordinates;
+    GCCornerData uvCoordinates;
     bool hasSolution = false;
 
     /**
@@ -50,14 +60,14 @@ public:
         triplets.reserve(mesh->nEdges() * 4);
 
         // Build cotan-Laplace operator
-        for (Edge e : mesh->edges()) {
-            Halfedge he = e.halfedge();
+        for (GCEdge e : mesh->edges()) {
+            GCHalfedge he = e.halfedge();
 
             // Get cotangent weights
             double cotAlpha = geometry->edgeCotanWeight(e);
 
-            Vertex vi = he.tailVertex();
-            Vertex vj = he.tipVertex();
+            GCVertex vi = he.tailVertex();
+            GCVertex vj = he.tipVertex();
             size_t i = vi.getIndex();
             size_t j = vj.getIndex();
 
@@ -89,7 +99,7 @@ BFFWrapper::BFFWrapper() : m_impl(std::make_unique<Implementation>()) {
 
 BFFWrapper::~BFFWrapper() = default;
 
-bool BFFWrapper::setMesh(HalfedgeMesh* mesh, VertexPositionGeometry* geometry) {
+bool BFFWrapper::setMesh(HalfedgeMesh* mesh, GCGeometry* geometry) {
     std::cout << "BFFWrapper::setMesh: Initializing REAL BFF implementation" << std::endl;
 
     if (!mesh || !geometry) {
@@ -110,15 +120,15 @@ bool BFFWrapper::setMesh(HalfedgeMesh* mesh, VertexPositionGeometry* geometry) {
     geometry->requireFaceAreas();
     geometry->requireEdgeLengths();
 
-    // Initialize vertex indices
-    m_impl->vertexIndices = VertexData<size_t>(*mesh);
+    // Initialize GCVertex indices
+    m_impl->vertexIndices = GCVertexIndexData(*mesh);
     size_t idx = 0;
-    for (Vertex v : mesh->vertices()) {
+    for (GCVertex v : mesh->vertices()) {
         m_impl->vertexIndices[v] = idx++;
     }
 
     // Initialize UV storage
-    m_impl->uvCoordinates = CornerData<Vector2>(*mesh, Vector2{0.0, 0.0});
+    m_impl->uvCoordinates = GCCornerData(*mesh, GCVector2{0.0, 0.0});
 
     m_impl->isInitialized = true;
     std::cout << "BFF Mesh initialized: " << mesh->nVertices() << " vertices, "
@@ -127,7 +137,7 @@ bool BFFWrapper::setMesh(HalfedgeMesh* mesh, VertexPositionGeometry* geometry) {
     return true;
 }
 
-bool BFFWrapper::applyCuts(const std::vector<std::vector<Edge>>& cutPaths) {
+bool BFFWrapper::applyCuts(const std::vector<std::vector<GCEdge>>& cutPaths) {
     std::cout << "BFFWrapper::applyCuts: Placeholder implementation with " << cutPaths.size() << " cut paths" << std::endl;
     m_hasCuts = !cutPaths.empty();
     return true; // Placeholder - always succeed
@@ -147,8 +157,8 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
     }
 
     try {
-        ManifoldSurfaceMesh* mesh = m_impl->mesh;
-        VertexPositionGeometry* geom = m_impl->geometry;
+        GCMesh* mesh = m_impl->mesh;
+        GCGeometry* geom = m_impl->geometry;
 
         size_t nV = mesh->nVertices();
 
@@ -163,11 +173,11 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(nV);
 
         std::cout << "  Computing angle defects..." << std::endl;
-        for (Vertex v : mesh->vertices()) {
+        for (GCVertex v : mesh->vertices()) {
             size_t i = m_impl->vertexIndices[v];
             // Angle defect K = 2π - Σθ (for interior vertices)
             double angleSum = 0.0;
-            for (Corner c : v.adjacentCorners()) {
+            for (GCCorner c : v.adjacentCorners()) {
                 angleSum += geom->cornerAngles[c];
             }
             double angleDefect = (v.isBoundary() ? M_PI : 2.0 * M_PI) - angleSum;
@@ -203,13 +213,13 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
         std::cout << "  Scale factors computed (range: " << u.minCoeff()
                   << " to " << u.maxCoeff() << ")" << std::endl;
 
-        // Step 4: Compute target edge lengths l* = exp(u_i + u_j)/2 * l_ij
-        EdgeData<double> targetLengths(*mesh);
+        // Step 4: Compute target GCEdge lengths l* = exp(u_i + u_j)/2 * l_ij
+        GCEdgeDataDouble targetLengths(*mesh);
 
-        for (Edge e : mesh->edges()) {
-            Halfedge he = e.halfedge();
-            Vertex vi = he.tailVertex();
-            Vertex vj = he.tipVertex();
+        for (GCEdge e : mesh->edges()) {
+            GCHalfedge he = e.halfedge();
+            GCVertex vi = he.tailVertex();
+            GCVertex vj = he.tipVertex();
 
             double ui = u[m_impl->vertexIndices[vi]];
             double uj = u[m_impl->vertexIndices[vj]];
@@ -231,10 +241,10 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
         // 如果有边界，使用边界优先展平
         if (mesh->nBoundaryLoops() > 0) {
             // 收集边界顶点
-            std::vector<Vertex> boundaryVerts;
+            std::vector<GCVertex> boundaryVerts;
             for (auto he : mesh->halfedges()) {
                 if (he.isInterior() && he.twin().isInterior() == false) {
-                    // This is a boundary halfedge
+                    // This is a boundary GCHalfedge
                     boundaryVerts.push_back(he.vertex());
                 }
             }
@@ -259,12 +269,12 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
             }
 
             // 构建Laplacian系统
-            for (Edge e : mesh->edges()) {
-                Halfedge he = e.halfedge();
+            for (GCEdge e : mesh->edges()) {
+                GCHalfedge he = e.halfedge();
                 double cotWeight = geom->edgeCotanWeights[e];
 
-                Vertex vi = he.tailVertex();
-                Vertex vj = he.tipVertex();
+                GCVertex vi = he.tailVertex();
+                GCVertex vj = he.tipVertex();
                 size_t i = m_impl->vertexIndices[vi];
                 size_t j = m_impl->vertexIndices[vj];
 
@@ -310,9 +320,9 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
 
         } else {
             // 闭合曲面：固定三个顶点形成三角形，使用cotan-Laplacian求解
-            Vertex v0 = mesh->vertex(0);
-            Vertex v1 = mesh->vertex(nV / 3);
-            Vertex v2 = mesh->vertex(2 * nV / 3);
+            GCVertex v0 = mesh->vertex(0);
+            GCVertex v1 = mesh->vertex(nV / 3);
+            GCVertex v2 = mesh->vertex(2 * nV / 3);
 
             size_t idx0 = m_impl->vertexIndices[v0];
             size_t idx1 = m_impl->vertexIndices[v1];
@@ -328,12 +338,12 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
             Eigen::VectorXd rhsV = Eigen::VectorXd::Zero(nV);
 
             // 使用cotan-Laplacian
-            for (Edge e : mesh->edges()) {
-                Halfedge he = e.halfedge();
+            for (GCEdge e : mesh->edges()) {
+                GCHalfedge he = e.halfedge();
                 double cotWeight = geom->edgeCotanWeights[e];
 
-                Vertex vi = he.tailVertex();
-                Vertex vj = he.tipVertex();
+                GCVertex vi = he.tailVertex();
+                GCVertex vj = he.tipVertex();
                 size_t i = m_impl->vertexIndices[vi];
                 size_t j = m_impl->vertexIndices[vj];
 
@@ -394,23 +404,23 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
 
         // 首先找出最大顶点索引以正确调整vector大小
         size_t maxVertexIndex = 0;
-        for (Vertex v : mesh->vertices()) {
+        for (GCVertex v : mesh->vertices()) {
             maxVertexIndex = std::max(maxVertexIndex, static_cast<size_t>(v.getIndex()));
         }
 
         // 调整大小以容纳所有可能的顶点索引（包括可能被删除的顶点留下的空隙）
-        result.uvCoordinates.resize(maxVertexIndex + 1, Vector2{0.0, 0.0});
-        m_uvCoordinates.resize(maxVertexIndex + 1, Vector2{0.0, 0.0});
+        result.uvCoordinates.resize(maxVertexIndex + 1, GCVector2{0.0, 0.0});
+        m_uvCoordinates.resize(maxVertexIndex + 1, GCVector2{0.0, 0.0});
 
         std::cout << "  UV coordinates vector size: " << result.uvCoordinates.size() << std::endl;
-        std::cout << "  Mesh vertices: " << nV << ", Max vertex index: " << maxVertexIndex << std::endl;
+    std::cout << "  Mesh vertices: " << nV << ", Max vertex index: " << maxVertexIndex << std::endl;
 
         // 按getIndex()顺序存储UV坐标
-        for (Vertex v : mesh->vertices()) {
+        for (GCVertex v : mesh->vertices()) {
             size_t i = m_impl->vertexIndices[v];
             size_t vertexIdx = v.getIndex();
 
-            Vector2 uv{
+            GCVector2 uv{
                 (uvU[i] - uMin) / scale,
                 (uvV[i] - vMin) / scale
             };
@@ -419,7 +429,7 @@ BFFResult BFFWrapper::computeParameterization(const BFFConfig& config) {
             m_uvCoordinates[vertexIdx] = uv;
 
             // Store in corner data for consistency
-            for (Corner c : v.adjacentCorners()) {
+            for (GCCorner c : v.adjacentCorners()) {
                 m_impl->uvCoordinates[c] = uv;
             }
         }
@@ -449,18 +459,18 @@ double BFFWrapper::computeAngleDistortion() const {
     double totalDistortion = 0.0;
     double totalArea = 0.0;
 
-    for (Face f : m_impl->mesh->faces()) {
-        std::vector<Vertex> verts;
-        std::vector<Vector3> pos3D;
-        std::vector<Vector2> posUV;
+    for (GCFace f : m_impl->mesh->faces()) {
+        std::vector<GCVertex> verts;
+        std::vector<GCVector3> pos3D;
+        std::vector<GCVector2> posUV;
 
-        for (Vertex v : f.adjacentVertices()) {
+        for (GCVertex v : f.adjacentVertices()) {
             verts.push_back(v);
             pos3D.push_back(m_impl->geometry->vertexPositions[v]);
 
             // Get UV from corner - fixed API usage
             bool found = false;
-            for (Corner c : f.adjacentCorners()) {
+            for (GCCorner c : f.adjacentCorners()) {
                 if (c.vertex() == v) {
                     posUV.push_back(m_impl->uvCoordinates[c]);
                     found = true;
@@ -469,7 +479,7 @@ double BFFWrapper::computeAngleDistortion() const {
             }
             if (!found) {
                 // Fallback: use zero UV if corner not found
-                posUV.push_back(Vector2{0.0, 0.0});
+                posUV.push_back(GCVector2{0.0, 0.0});
             }
         }
 
@@ -483,13 +493,13 @@ double BFFWrapper::computeAngleDistortion() const {
             int i_next = (i + 1) % 3;
 
             // 3D angle
-            Vector3 e1 = pos3D[i_prev] - pos3D[i];
-            Vector3 e2 = pos3D[i_next] - pos3D[i];
+            GCVector3 e1 = pos3D[i_prev] - pos3D[i];
+            GCVector3 e2 = pos3D[i_next] - pos3D[i];
             double angle3D = angle(e1, e2);
 
             // UV angle
-            Vector2 u1 = posUV[i_prev] - posUV[i];
-            Vector2 u2 = posUV[i_next] - posUV[i];
+            GCVector2 u1 = posUV[i_prev] - posUV[i];
+            GCVector2 u2 = posUV[i_next] - posUV[i];
             double angleUV = atan2(u1.x * u2.y - u1.y * u2.x,
                                    u1.x * u2.x + u1.y * u2.y);
             if (angleUV < 0) angleUV += 2 * M_PI;
@@ -513,10 +523,10 @@ double BFFWrapper::computeAreaDistortion() const {
     double totalDistortion = 0.0;
     double totalArea = 0.0;
 
-    for (Face f : m_impl->mesh->faces()) {
-        std::vector<Vector2> posUV;
+    for (GCFace f : m_impl->mesh->faces()) {
+        std::vector<GCVector2> posUV;
 
-        for (Corner c : f.adjacentCorners()) {
+        for (GCCorner c : f.adjacentCorners()) {
             posUV.push_back(m_impl->uvCoordinates[c]);
         }
 
@@ -525,8 +535,8 @@ double BFFWrapper::computeAreaDistortion() const {
         double area3D = m_impl->geometry->faceAreas[f];
 
         // Compute UV area
-        Vector2 e1 = posUV[1] - posUV[0];
-        Vector2 e2 = posUV[2] - posUV[0];
+        GCVector2 e1 = posUV[1] - posUV[0];
+        GCVector2 e2 = posUV[2] - posUV[0];
         double areaUV = 0.5 * abs(e1.x * e2.y - e1.y * e2.x);
 
         double areaRatio = (area3D > 1e-10) ? (areaUV / area3D) : 1.0;
@@ -549,18 +559,18 @@ double BFFWrapper::computeConformalError() const {
     double totalError = 0.0;
     int count = 0;
 
-    for (Face f : m_impl->mesh->faces()) {
-        std::vector<Vertex> verts;
-        std::vector<Vector3> pos3D;
-        std::vector<Vector2> posUV;
+    for (GCFace f : m_impl->mesh->faces()) {
+        std::vector<GCVertex> verts;
+        std::vector<GCVector3> pos3D;
+        std::vector<GCVector2> posUV;
 
-        for (Vertex v : f.adjacentVertices()) {
+        for (GCVertex v : f.adjacentVertices()) {
             verts.push_back(v);
             pos3D.push_back(m_impl->geometry->vertexPositions[v]);
 
             // Get UV from corner - fixed API usage
             bool found = false;
-            for (Corner c : f.adjacentCorners()) {
+            for (GCCorner c : f.adjacentCorners()) {
                 if (c.vertex() == v) {
                     posUV.push_back(m_impl->uvCoordinates[c]);
                     found = true;
@@ -569,22 +579,22 @@ double BFFWrapper::computeConformalError() const {
             }
             if (!found) {
                 // Fallback: use zero UV if corner not found
-                posUV.push_back(Vector2{0.0, 0.0});
+                posUV.push_back(GCVector2{0.0, 0.0});
             }
         }
 
         if (verts.size() != 3) continue;
 
         // Compute Jacobian singular values
-        Vector3 e1_3d = pos3D[1] - pos3D[0];
-        Vector3 e2_3d = pos3D[2] - pos3D[0];
-        Vector2 e1_uv = posUV[1] - posUV[0];
-        Vector2 e2_uv = posUV[2] - posUV[0];
+        GCVector3 e1_3d = pos3D[1] - pos3D[0];
+        GCVector3 e2_3d = pos3D[2] - pos3D[0];
+        GCVector2 e1_uv = posUV[1] - posUV[0];
+        GCVector2 e2_uv = posUV[2] - posUV[0];
 
         // Build 2x2 system: [e1_uv e2_uv] = J * [e1_2d e2_2d]
-        Vector3 n = cross(e1_3d, e2_3d).normalize();
-        Vector3 xAxis = e1_3d.normalize();
-        Vector3 yAxis = cross(n, xAxis).normalize();
+        GCVector3 n = cross(e1_3d, e2_3d).normalize();
+        GCVector3 xAxis = e1_3d.normalize();
+        GCVector3 yAxis = cross(n, xAxis).normalize();
 
         Eigen::Vector2d e1_2d(dot(e1_3d, xAxis), dot(e1_3d, yAxis));
         Eigen::Vector2d e2_2d(dot(e2_3d, xAxis), dot(e2_3d, yAxis));
@@ -617,18 +627,18 @@ double BFFWrapper::computeConformalError() const {
     return (count > 0) ? (totalError / count) : 0.0;
 }
 
-std::vector<std::vector<Vector2>> BFFWrapper::getUVBoundaries() const {
+std::vector<std::vector<GCVector2>> BFFWrapper::getUVBoundaries() const {
     std::cout << "BFFWrapper::getUVBoundaries: Placeholder implementation" << std::endl;
     return {}; // Return empty boundaries for now
 }
 
-std::vector<std::array<Vector2, 3>> BFFWrapper::getUVTriangles() const {
-    std::vector<std::array<Vector2, 3>> triangles;
+std::vector<std::array<GCVector2, 3>> BFFWrapper::getUVTriangles() const {
+    std::vector<std::array<GCVector2, 3>> triangles;
 
     if (m_gcMesh && m_isParameterized && !m_uvCoordinates.empty()) {
         // Generate triangles from faces
         for (auto f : m_gcMesh->faces()) {
-            std::array<Vector2, 3> triangle;
+            std::array<GCVector2, 3> triangle;
             int i = 0;
             for (auto v : f.adjacentVertices()) {
                 if (i < 3) {
@@ -656,14 +666,14 @@ void BFFWrapper::exportUVMesh(const std::string& filename) const {
 // SmartCutGenerator implementation - Simple Fallback
 // NOTE: Variational Cuts集成被临时禁用以解决链接问题
 // 参考: docs/Variational Surface Cutting调用失败的根本原因分析.md
-std::vector<std::vector<Edge>> SmartCutGenerator::generateCutsForClosedMesh(
+std::vector<std::vector<GCEdge>> SmartCutGenerator::generateCutsForClosedMesh(
     HalfedgeMesh* mesh,
-    VertexPositionGeometry* geometry,
-    const std::vector<Vertex>& highCurvaturePoints) {
+    GCGeometry* geometry,
+    const std::vector<GCVertex>& highCurvaturePoints) {
 
     std::cout << "SmartCutGenerator::generateCutsForClosedMesh: Attempting Variational Cuts integration..." << std::endl;
 
-    std::vector<std::vector<Edge>> cutPaths;
+    std::vector<std::vector<GCEdge>> cutPaths;
 
     // 真实的Variational Cuts集成（已修复）
     try {
@@ -703,9 +713,9 @@ std::vector<std::vector<Edge>> SmartCutGenerator::generateCutsForClosedMesh(
     }
 
     // 简单的回退逻辑：生成一些基本的切割以允许BFF运行
-    std::cout << "  Using fallback: simple 3-edge cut" << std::endl;
+    std::cout << "  Using fallback: simple 3-GCEdge cut" << std::endl;
     if (!highCurvaturePoints.empty() && mesh->nEdges() > 0) {
-        std::vector<Edge> simpleCut;
+        std::vector<GCEdge> simpleCut;
         int edgeCount = 0;
         for (auto e : mesh->edges()) {
             simpleCut.push_back(e);
@@ -720,14 +730,14 @@ std::vector<std::vector<Edge>> SmartCutGenerator::generateCutsForClosedMesh(
     return cutPaths;
 }
 
-std::vector<Vertex> SmartCutGenerator::detectConePoints(
+std::vector<GCVertex> SmartCutGenerator::detectConePoints(
     HalfedgeMesh* mesh,
-    VertexPositionGeometry* geometry,
+    GCGeometry* geometry,
     double curvatureThreshold) {
 
     std::cout << "SmartCutGenerator::detectConePoints: Placeholder implementation" << std::endl;
 
-    std::vector<Vertex> conePoints;
+    std::vector<GCVertex> conePoints;
 
     // Simple placeholder: select a few vertices as cone points
     if (mesh->nVertices() > 4) {
@@ -742,17 +752,17 @@ std::vector<Vertex> SmartCutGenerator::detectConePoints(
     return conePoints;
 }
 
-std::vector<Edge> SmartCutGenerator::findShortestPath(
+std::vector<GCEdge> SmartCutGenerator::findShortestPath(
     HalfedgeMesh* mesh,
-    VertexPositionGeometry* geometry,
-    Vertex start,
-    Vertex end) {
+    GCGeometry* geometry,
+    GCVertex start,
+    GCVertex end) {
 
     std::cout << "SmartCutGenerator::findShortestPath: Placeholder implementation" << std::endl;
 
-    std::vector<Edge> path;
+    std::vector<GCEdge> path;
 
-    // Simple placeholder: find a direct edge if it exists
+    // Simple placeholder: find a direct GCEdge if it exists
     for (auto e : start.adjacentEdges()) {
         if (e.otherVertex(start) == end) {
             path.push_back(e);
@@ -764,3 +774,10 @@ std::vector<Edge> SmartCutGenerator::findShortestPath(
 }
 
 } // namespace SurfaceTextureMapping
+
+
+
+
+
+
+

@@ -95,6 +95,10 @@ public:
 
     // == Core boundary geometry
     void ensureHaveBoundaryGeometry();
+    const std::vector<std::vector<BoundarySegment>>& getBoundarySegments();
+    Vector3 startPoint(const BoundarySegment &b);
+    Vector3 endPoint(const BoundarySegment &b);
+    double boundaryLength(const BoundarySegment &b);
     bool haveBoundaryGeometry = false;
     VertexData<int> regionLabels;
     std::vector<std::vector<BoundarySegment>> boundarySegments;
@@ -334,10 +338,6 @@ public:
 
 
     // Boundary segment helpers
-    Vector3 startPoint(const BoundarySegment &b);
-    Vector3 endPoint(const BoundarySegment &b);
-    double boundaryLength(const BoundarySegment &b);
-
     // Cached geometric attributes
     void cacheGeometry(void);
     size_t nVert;

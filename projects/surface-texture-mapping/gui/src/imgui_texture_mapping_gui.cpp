@@ -393,14 +393,35 @@ void ImGuiTextureMappingGUI::renderCuts() {
     glUniform1i(glGetUniformLocation(m_shaderProgram, "wireframe"), true);
     glUniform3fv(glGetUniformLocation(m_shaderProgram, "objectColor"), 1, glm::value_ptr(m_guiState.cutColor));
 
-    // 设置线宽（使切割线更明显）
-    glLineWidth(3.0f);
+    // 增加线宽使分割线更加明显
+    glLineWidth(5.0f);
 
-    // 绑定VAO并绘制
+    // 方法1: 使用多边形偏移避免z-fighting（保持深度测试开启，线条略微浮在表面之上）
+    glEnable(GL_POLYGON_OFFSET_LINE);
+    glPolygonOffset(-1.0f, -1.0f);  // 负值使线条略微靠近相机
+
+    // 保持深度测试开启，但设置深度函数为LEQUAL以允许相同深度通过
+    glDepthFunc(GL_LEQUAL);
+
+    // 第一遍：带深度测试渲染（正常情况）
     glBindVertexArray(m_linesVAO);
-    glDrawArrays(GL_LINES, 0, m_lineVertices.size() / 6);  // 6 floats per vertex (pos + normal)
+    glDrawArrays(GL_LINES, 0, m_lineVertices.size() / 6);
 
-    // 恢复默认线宽
+    // 第二遍：关闭深度写入，确保被遮挡部分也能部分可见（使用半透明）
+    glDepthMask(GL_FALSE);  // 不写入深度缓冲
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // 使用稍微透明的颜色重新绘制
+    glm::vec3 transparentColor = m_guiState.cutColor * 0.6f;  // 60%强度
+    glUniform3fv(glGetUniformLocation(m_shaderProgram, "objectColor"), 1, glm::value_ptr(transparentColor));
+    glDrawArrays(GL_LINES, 0, m_lineVertices.size() / 6);
+
+    // 恢复OpenGL状态
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_POLYGON_OFFSET_LINE);
     glLineWidth(1.0f);
 }
 

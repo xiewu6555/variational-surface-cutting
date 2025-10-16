@@ -6,6 +6,7 @@
 #include "texture_mapping.h"
 #include "bff_wrapper.h"
 #include "real_algorithm_integration.h"  // For IntegratedVariationalCutter
+#include "eulerian_cut_integrator.h"
 #include <iostream>
 #include <algorithm>
 #include <numeric>
@@ -190,7 +191,7 @@ TextureMapper::computeConformalMapping(const MappingParams& params) {
     }
 
     // 检测或使用指定的锥点
-    std::vector<geometrycentral::surface::Vertex> coneVertices;
+    std::vector<EulerianCutIntegrator::GC_Vertex> coneVertices;
     if (params.automaticConeDetection) {
         std::cout << "      Detecting cone points..." << std::endl;
         auto coneIndices = detectConeVertices(params.curvatureThreshold);

@@ -78,6 +78,10 @@ public:
         double maxPositionError = 0.0;     // 顶点位置最大误差
         double maxEdgeLengthError = 0.0;   // 边长最大误差
         double maxAreaError = 0.0;         // 面积最大误差
+
+        // 顶点索引映射
+        std::vector<size_t> coreToGCVertexIndex;   // core顶点 -> GC索引
+        std::vector<size_t> gcToCoreVertexIndex;   // GC顶点 -> core索引
     };
 
     /**
