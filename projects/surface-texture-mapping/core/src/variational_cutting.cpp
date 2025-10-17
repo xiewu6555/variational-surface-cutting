@@ -1,18 +1,20 @@
 /**
  * 变分切缝算法实现
  * 基于EulerianShapeOptimizer的真实变分表面切割算法集成
- * 版本: 2.0 (2025-10-10) - 完整的Variational Surface Cutting集成
+ * 版本: 2.1 (2025-10-16) - 完整的Variational Surface Cutting集成 + 真实网格切割
  */
 
 #include "variational_cutting.h"
 #include "real_algorithm_integration.h"
 #include "eulerian_cut_integrator.h"  // ⭐ 添加真实算法接口
+#include "geometrycentral/surface/surgery.h"  // ⭐ 网格切割操作
 #include <iostream>
 #include <cmath>
 #include <algorithm>
 #include <memory>
 #include <set>
 #include <vector>
+#include <functional>  // For std::function (recursive lambda)
 
 namespace SurfaceTextureMapping {
 
@@ -164,6 +166,10 @@ VariationalCutter::computeOptimalCuts(const CuttingParams& params) {
     std::cout << "  Algorithm: REAL Variational Surface Cutting (EulerianShapeOptimizer)" << std::endl;
     std::cout << "=========================================" << std::endl;
 
+    // ========== 保存边路径供applyCutsToMesh()使用 ==========
+    lastCutEdgePaths_ = edgePaths;
+    std::cout << "\n[Info] Edge paths saved for mesh cutting: " << edgePaths.size() << " paths" << std::endl;
+
     return cuts;
 }
 
@@ -303,15 +309,234 @@ VariationalCutter::computeOptimalCutsFallback(const CuttingParams& params) {
 std::shared_ptr<VariationalCutter::SurfaceMesh>
 VariationalCutter::applyCutsToMesh(const std::vector<CutCurve>& cuts) {
     if (!mesh_ || cuts.empty()) {
+        std::cout << "  [Warning] Cannot apply cuts: mesh or cuts empty" << std::endl;
         return nullptr;
     }
 
-    std::cout << "Applying " << cuts.size() << " cuts to mesh..." << std::endl;
+    if (lastCutEdgePaths_.empty()) {
+        std::cerr << "  [ERROR] No edge paths available! Did you call computeOptimalCuts() first?" << std::endl;
+        return nullptr;
+    }
 
-    // TODO: 实现切缝应用逻辑
-    // 创建网格的副本并应用切缝
+    std::cout << "\n=========================================" << std::endl;
+    std::cout << "Applying " << cuts.size() << " cuts to mesh using geometry-central surgery..." << std::endl;
+    std::cout << "=========================================" << std::endl;
 
-    return mesh_;  // 暂时返回原网格
+    using namespace geometrycentral;
+    using namespace geometrycentral::surface;
+
+    // ========== 步骤1: 创建EdgeData标记需要切割的边 ==========
+    std::cout << "\n[Step 1] Marking edges to cut..." << std::endl;
+
+    // 使用geometry-central的EdgeData类型 (避免与Core库的EdgeData冲突)
+    geometrycentral::surface::EdgeData<char> cutMarker(*mesh_, (char)0);  // 初始化所有边为0（不切割）
+    int totalEdgesToCut = 0;
+
+    // 遍历所有切割路径，标记需要切割的边
+    for (size_t pathIdx = 0; pathIdx < lastCutEdgePaths_.size(); ++pathIdx) {
+        const auto& edgePath = lastCutEdgePaths_[pathIdx];
+        std::cout << "  Marking cut path " << (pathIdx + 1) << " with " << edgePath.size() << " edges" << std::endl;
+
+        for (const auto& edge : edgePath) {
+            cutMarker[edge] = (char)1;  // 标记为需要切割
+            totalEdgesToCut++;
+        }
+    }
+
+    std::cout << "  Total edges marked for cutting: " << totalEdgesToCut << std::endl;
+
+    // ========== 步骤1.5: 将切割边转换为生成树 ==========
+    // cutAlongEdges() 要求切割边形成树状结构（必须有叶子节点）
+    // 但 Variational Surface Cutting 可能产生环路，需要移除环路边
+    std::cout << "\n[Step 1.5] Converting cut edges to spanning tree..." << std::endl;
+    std::cout << "  Reason: cutAlongEdges() requires a tree structure (no cycles)" << std::endl;
+
+    geometrycentral::surface::EdgeData<char> treeMarker = convertCutEdgesToSpanningTree(cutMarker);
+
+    int treeEdgeCount = 0;
+    for (GCEdge e : mesh_->edges()) {
+        if (treeMarker[e]) treeEdgeCount++;
+    }
+    std::cout << "  Spanning tree edges: " << treeEdgeCount
+              << " (removed " << (totalEdgesToCut - treeEdgeCount) << " cycle edges)" << std::endl;
+
+    // ========== 步骤2: 调用geometry-central的cutAlongEdges() ==========
+    std::cout << "\n[Step 2] Calling cutAlongEdges()..." << std::endl;
+
+    try {
+        // cutAlongEdges返回：(新网格, halfedge映射)
+        auto [cutMeshPtr, halfedgeMap] = cutAlongEdges(*mesh_, treeMarker);
+
+        if (!cutMeshPtr) {
+            std::cerr << "  [ERROR] cutAlongEdges() returned null mesh!" << std::endl;
+            return nullptr;
+        }
+
+        std::cout << "  cutAlongEdges() succeeded!" << std::endl;
+        std::cout << "  Original mesh: " << mesh_->nVertices() << " vertices, "
+                  << mesh_->nFaces() << " faces" << std::endl;
+        std::cout << "  Cut mesh:      " << cutMeshPtr->nVertices() << " vertices, "
+                  << cutMeshPtr->nFaces() << " faces" << std::endl;
+        std::cout << "  Vertex difference: +" << (cutMeshPtr->nVertices() - mesh_->nVertices())
+                  << " (duplicated along cuts)" << std::endl;
+
+        // ========== 步骤3: 复制几何信息到新网格 ==========
+        std::cout << "\n[Step 3] Copying geometry to cut mesh..." << std::endl;
+
+        // 创建新的几何数据
+        auto cutGeometry = std::make_shared<VertexPositionGeometry>(*cutMeshPtr);
+
+        // 复制顶点位置（使用halfedge映射）
+        for (GCVertex newV : cutMeshPtr->vertices()) {
+            // 找到新顶点的任意一个halfedge
+            GCHalfedge newHe = newV.halfedge();
+
+            // 通过halfedge映射找到原始网格的对应halfedge
+            GCHalfedge oldHe = halfedgeMap[newHe];
+
+            if (oldHe != GCHalfedge()) {
+                // 如果有对应的原始halfedge，获取其尾顶点的位置
+                GCVertex oldV = oldHe.tailVertex();
+                cutGeometry->vertexPositions[newV] = geometry_->vertexPositions[oldV];
+            } else {
+                // 这是新创建的边界halfedge，找到其twin的对应顶点
+                GCHalfedge twinHe = newHe.twin();
+                GCHalfedge oldTwinHe = halfedgeMap[twinHe];
+                if (oldTwinHe != GCHalfedge()) {
+                    GCVertex oldV = oldTwinHe.tipVertex();
+                    cutGeometry->vertexPositions[newV] = geometry_->vertexPositions[oldV];
+                }
+            }
+        }
+
+        std::cout << "  Geometry copied successfully" << std::endl;
+
+        // ========== 步骤4: 验证结果 ==========
+        std::cout << "\n[Step 4] Verifying cut mesh..." << std::endl;
+
+        int numBoundaryLoops = cutMeshPtr->nBoundaryLoops();
+        int numBoundaryVertices = 0;
+        for (GCVertex v : cutMeshPtr->vertices()) {
+            if (v.isBoundary()) numBoundaryVertices++;
+        }
+
+        std::cout << "  Boundary loops: " << numBoundaryLoops << std::endl;
+        std::cout << "  Boundary vertices: " << numBoundaryVertices << std::endl;
+
+        if (numBoundaryLoops == 0) {
+            std::cerr << "  [WARNING] Cut mesh still has no boundaries!" << std::endl;
+            std::cerr << "    This means the cutting failed to create boundaries." << std::endl;
+        } else {
+            std::cout << "  ✓ Cut mesh has boundaries - ready for BFF!" << std::endl;
+        }
+
+        std::cout << "\n=========================================" << std::endl;
+        std::cout << "Mesh cutting completed successfully!" << std::endl;
+        std::cout << "=========================================" << std::endl;
+
+        // 更新内部状态
+        mesh_ = std::move(cutMeshPtr);
+        geometry_ = cutGeometry;
+
+        return mesh_;
+
+    } catch (const std::exception& e) {
+        std::cerr << "\n[ERROR] Exception during mesh cutting: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+// ========== 辅助函数：将切割边转换为生成树 ==========
+geometrycentral::surface::EdgeData<char>
+VariationalCutter::convertCutEdgesToSpanningTree(const geometrycentral::surface::EdgeData<char>& cutMarker) const {
+    using namespace geometrycentral::surface;
+
+    std::cout << "  [Spanning Tree Algorithm] Using Union-Find to build spanning tree..." << std::endl;
+
+    // 初始化结果标记（全部为0）- 使用 geometry-central 的 EdgeData
+    geometrycentral::surface::EdgeData<char> treeMarker(*mesh_, (char)0);
+
+    // 找到所有被标记的切割边
+    std::vector<GCEdge> cutEdges;
+    for (GCEdge e : mesh_->edges()) {
+        if (cutMarker[e]) {
+            cutEdges.push_back(e);
+        }
+    }
+
+    if (cutEdges.empty()) {
+        std::cout << "    No cut edges found!" << std::endl;
+        return treeMarker;
+    }
+
+    std::cout << "    Input cut edges: " << cutEdges.size() << std::endl;
+
+    // 使用并查集（Union-Find）构建生成树，避免环路
+    std::map<GCVertex, GCVertex> parent;
+
+    // 初始化并查集 - 使用 std::function 支持递归lambda
+    std::function<GCVertex(GCVertex)> findParent = [&](GCVertex v) -> GCVertex {
+        if (parent.find(v) == parent.end()) {
+            parent[v] = v;
+            return v;
+        }
+        // 路径压缩
+        if (parent[v] != v) {
+            parent[v] = findParent(parent[v]);
+        }
+        return parent[v];
+    };
+
+    auto unite = [&](GCVertex u, GCVertex v) -> bool {
+        GCVertex pu = findParent(u);
+        GCVertex pv = findParent(v);
+        if (pu == pv) {
+            return false;  // 已经在同一个集合，添加这条边会形成环
+        }
+        parent[pu] = pv;
+        return true;
+    };
+
+    // 构建生成树：遍历所有切割边，添加不形成环的边
+    int addedEdges = 0;
+    int skippedEdges = 0;
+
+    for (const GCEdge& edge : cutEdges) {
+        GCHalfedge he = edge.halfedge();
+        GCVertex v1 = he.tailVertex();
+        GCVertex v2 = he.tipVertex();
+
+        if (unite(v1, v2)) {
+            // 不形成环，添加到生成树
+            treeMarker[edge] = (char)1;
+            addedEdges++;
+        } else {
+            // 形成环，跳过
+            skippedEdges++;
+        }
+    }
+
+    std::cout << "    Spanning tree construction:" << std::endl;
+    std::cout << "      Added edges: " << addedEdges << std::endl;
+    std::cout << "      Skipped edges (would form cycles): " << skippedEdges << std::endl;
+
+    // 验证生成树是否有叶子节点
+    int leafCount = 0;
+    for (GCVertex v : mesh_->vertices()) {
+        int degree = 0;
+        for (GCEdge e : v.adjacentEdges()) {
+            if (treeMarker[e]) degree++;
+        }
+        if (degree == 1) leafCount++;
+    }
+
+    std::cout << "    Leaf vertices (degree=1): " << leafCount << std::endl;
+
+    if (leafCount == 0 && addedEdges > 0) {
+        std::cerr << "    [WARNING] No leaf vertices found! Tree structure may be invalid." << std::endl;
+    }
+
+    return treeMarker;
 }
 
 VariationalCutter::CutQuality VariationalCutter::evaluateCutQuality(const std::vector<CutCurve>& cuts) const {

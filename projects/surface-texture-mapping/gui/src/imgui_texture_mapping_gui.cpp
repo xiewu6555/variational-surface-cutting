@@ -86,6 +86,8 @@ ImGuiTextureMappingGUI::ImGuiTextureMappingGUI()
     , m_shaderProgram(0)
     , m_meshVAO(0), m_meshVBO(0), m_meshEBO(0)
     , m_linesVAO(0), m_linesVBO(0)
+    , m_uvGridVAO(0), m_uvGridVBO(0)
+    , m_patternVAO(0), m_patternVBO(0)
 {
     // Initialize Surface Texture Mapping components (真实算法)
     m_meshProcessor = std::make_unique<MeshProcessor>();
@@ -373,6 +375,11 @@ void ImGuiTextureMappingGUI::render() {
     if (m_guiState.showPatterns) {
         renderPatterns();
     }
+
+    // Render UV mapping
+    if (m_guiState.showUVMapping && m_uvMappingComputed) {
+        renderUVGrid();
+    }
 }
 
 void ImGuiTextureMappingGUI::renderMesh() {
@@ -441,6 +448,29 @@ void ImGuiTextureMappingGUI::renderPatterns() {
     glDrawArrays(GL_LINES, 0, m_patternVertices.size() / 6);  // 6 floats per vertex
 
     // 恢复默认线宽
+    glLineWidth(1.0f);
+}
+
+void ImGuiTextureMappingGUI::renderUVGrid() {
+    if (m_uvGridVertices.empty()) return;
+
+    // 使用线条模式渲染UV展开网格
+    glUseProgram(m_shaderProgram);
+    glUniform1i(glGetUniformLocation(m_shaderProgram, "wireframe"), true);
+    glUniform3fv(glGetUniformLocation(m_shaderProgram, "objectColor"), 1, glm::value_ptr(glm::vec3(0.2f, 0.8f, 1.0f)));  // 青蓝色
+
+    // 设置线宽
+    glLineWidth(1.5f);
+
+    // 关闭深度测试，使UV网格始终可见
+    glDisable(GL_DEPTH_TEST);
+
+    // 绑定VAO并绘制
+    glBindVertexArray(m_uvGridVAO);
+    glDrawArrays(GL_LINES, 0, m_uvGridVertices.size() / 6);  // 6 floats per vertex
+
+    // 恢复状态
+    glEnable(GL_DEPTH_TEST);
     glLineWidth(1.0f);
 }
 
@@ -1355,12 +1385,30 @@ void ImGuiTextureMappingGUI::computeCuts() {
                 m_statistics.totalCutLength += cut.totalLength;
             }
 
-            // 应用切缝到网格
+            // ========== 应用切割到网格 ==========
+            logMessage("  Applying cuts to mesh...");
             auto cutMesh = m_cutter->applyCutsToMesh(cuts);
+
             if (cutMesh) {
+                logMessage("    Cut mesh returned successfully");
+
+                // 更新网格引用
                 m_mesh = cutMesh;
+                m_geometry = m_cutter->getGeometry();  // 获取更新后的几何
+
+                // 更新其他组件的网格引用
                 m_textureMapper->setMesh(m_mesh, m_geometry);
+
+                // 更新可视化
                 updateMeshBuffers();
+
+                // 更新统计信息以反映切割后的网格
+                updateStatistics();
+
+                logMessage("    Mesh updated with cuts: " + std::to_string(m_mesh->nVertices()) +
+                          " vertices, " + std::to_string(m_mesh->nBoundaryLoops()) + " boundary loops");
+            } else {
+                logMessage("    Warning: applyCutsToMesh() returned null");
             }
 
             // 更新切缝的OpenGL缓冲区以供可视化
@@ -1489,7 +1537,14 @@ void ImGuiTextureMappingGUI::computeUVMapping() {
 
             m_uvMappingComputed = true;
 
+            // ⭐ 自动启用UV网格显示，提升用户体验
+            m_guiState.showUVMapping = true;
+            logMessage("  ✓ UV grid visualization ENABLED automatically");
+
             logMessage("UV mapping pipeline completed successfully");
+
+            // 更新UV网格可视化缓冲区
+            updateUVGridBuffers();
 
             // 可选：导出UV网格
             // m_textureMapper->exportUVMesh(m_guiState.outputPrefix + "_uv.obj", finalMapping);
@@ -1743,6 +1798,153 @@ void ImGuiTextureMappingGUI::updatePatternsBuffers() {
     }
 }
 
+void ImGuiTextureMappingGUI::updateUVGridBuffers() {
+    using namespace geometrycentral;
+    using namespace geometrycentral::surface;
+
+    // 清空现有数据
+    m_uvGridVertices.clear();
+
+    if (!m_currentUVMapping.has_value() || !m_mesh) {
+        logMessage("  Warning: No UV mapping available for visualization");
+        return;
+    }
+
+    const auto& mapping = m_currentUVMapping.value();
+
+    if (mapping.uvCoordinates.empty()) {
+        logMessage("  Warning: UV coordinates are empty");
+        return;
+    }
+
+    logMessage("  Building UV grid visualization...");
+
+    // ========== 诊断UV坐标质量 ==========
+    logMessage("  [DEBUG] Analyzing UV coordinate distribution:");
+    double minU = 1e10, maxU = -1e10, minV = 1e10, maxV = -1e10;
+    int validCoords = 0, invalidCoords = 0;
+
+    for (const auto& uv : mapping.uvCoordinates) {
+        if (std::isfinite(uv.x) && std::isfinite(uv.y)) {
+            minU = std::min(minU, uv.x);
+            maxU = std::max(maxU, uv.x);
+            minV = std::min(minV, uv.y);
+            maxV = std::max(maxV, uv.y);
+            validCoords++;
+        } else {
+            invalidCoords++;
+        }
+    }
+
+    logMessage("    UV range: U=[" + std::to_string(minU) + ", " + std::to_string(maxU) +
+              "], V=[" + std::to_string(minV) + ", " + std::to_string(maxV) + "]");
+    logMessage("    Valid coords: " + std::to_string(validCoords) +
+              ", Invalid: " + std::to_string(invalidCoords));
+
+    // 检查网格是否有边界
+    int numBoundaryLoops = m_mesh->nBoundaryLoops();
+    int numBoundaryVertices = 0;
+    for (Vertex v : m_mesh->vertices()) {
+        if (v.isBoundary()) numBoundaryVertices++;
+    }
+
+    logMessage("    Mesh has " + std::to_string(numBoundaryLoops) + " boundary loops");
+    logMessage("    Boundary vertices: " + std::to_string(numBoundaryVertices) +
+              " / " + std::to_string(m_mesh->nVertices()));
+
+    if (numBoundaryLoops == 0) {
+        logMessage("  [WARNING] Mesh is CLOSED (no boundaries)!");
+        logMessage("    This means cuts were NOT successfully applied.");
+        logMessage("    BFF is trying to flatten a closed surface -> high distortion!");
+    }
+    // ========== 诊断结束 ==========
+
+    // 缩放和偏移参数：将UV网格放置在原模型旁边
+    const float uvScale = 2.0f;         // UV空间的缩放因子
+    const float offsetX = 3.0f;         // X轴偏移（放在模型右侧）
+    const float offsetY = 0.0f;         // Y轴偏移
+    const float offsetZ = 0.0f;         // Z轴偏移（UV网格在XY平面上，Z=0）
+
+    // 为每个面的边生成线段
+    for (Face f : m_mesh->faces()) {
+        std::vector<Vertex> verts;
+        for (Vertex v : f.adjacentVertices()) {
+            verts.push_back(v);
+        }
+
+        if (verts.size() < 3) continue;
+
+        // 为三角形的三条边生成线段
+        for (size_t i = 0; i < 3; ++i) {
+            size_t nextIdx = (i + 1) % 3;
+
+            size_t idx1 = verts[i].getIndex();
+            size_t idx2 = verts[nextIdx].getIndex();
+
+            // 检查索引有效性
+            if (idx1 >= mapping.uvCoordinates.size() || idx2 >= mapping.uvCoordinates.size()) {
+                continue;
+            }
+
+            // 获取UV坐标
+            const auto& uv1 = mapping.uvCoordinates[idx1];
+            const auto& uv2 = mapping.uvCoordinates[idx2];
+
+            // 将UV坐标(u,v)映射到3D空间: (x, y, 0) + offset
+            Vector3 p1{uv1.x * uvScale + offsetX, uv1.y * uvScale + offsetY, offsetZ};
+            Vector3 p2{uv2.x * uvScale + offsetX, uv2.y * uvScale + offsetY, offsetZ};
+
+            // 法线向外（Z轴正方向）
+            Vector3 normal{0, 0, 1};
+
+            // 第一个点 (位置 + 法线)
+            m_uvGridVertices.push_back(p1.x);
+            m_uvGridVertices.push_back(p1.y);
+            m_uvGridVertices.push_back(p1.z);
+            m_uvGridVertices.push_back(normal.x);
+            m_uvGridVertices.push_back(normal.y);
+            m_uvGridVertices.push_back(normal.z);
+
+            // 第二个点 (位置 + 法线)
+            m_uvGridVertices.push_back(p2.x);
+            m_uvGridVertices.push_back(p2.y);
+            m_uvGridVertices.push_back(p2.z);
+            m_uvGridVertices.push_back(normal.x);
+            m_uvGridVertices.push_back(normal.y);
+            m_uvGridVertices.push_back(normal.z);
+        }
+    }
+
+    // 更新OpenGL缓冲区
+    if (!m_uvGridVertices.empty()) {
+        // 创建VAO/VBO（如果尚未创建）
+        if (m_uvGridVAO == 0) {
+            glGenVertexArrays(1, &m_uvGridVAO);
+            glGenBuffers(1, &m_uvGridVBO);
+        }
+
+        glBindVertexArray(m_uvGridVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, m_uvGridVBO);
+        glBufferData(GL_ARRAY_BUFFER, m_uvGridVertices.size() * sizeof(float),
+                     m_uvGridVertices.data(), GL_STATIC_DRAW);
+
+        // 位置属性 (location = 0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+
+        // 法线属性 (location = 1)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+
+        glBindVertexArray(0);
+
+        int numEdges = m_uvGridVertices.size() / 12;  // 每条边2个顶点，每顶点6个float
+        logMessage("  UV grid buffers updated: " + std::to_string(numEdges) + " edges");
+    } else {
+        logMessage("  Warning: No UV grid vertices generated");
+    }
+}
+
 void ImGuiTextureMappingGUI::cleanup() {
     if (m_window) {
         // Cleanup OpenGL resources
@@ -1751,6 +1953,10 @@ void ImGuiTextureMappingGUI::cleanup() {
         if (m_meshEBO) glDeleteBuffers(1, &m_meshEBO);
         if (m_linesVAO) glDeleteVertexArrays(1, &m_linesVAO);
         if (m_linesVBO) glDeleteBuffers(1, &m_linesVBO);
+        if (m_uvGridVAO) glDeleteVertexArrays(1, &m_uvGridVAO);
+        if (m_uvGridVBO) glDeleteBuffers(1, &m_uvGridVBO);
+        if (m_patternVAO) glDeleteVertexArrays(1, &m_patternVAO);
+        if (m_patternVBO) glDeleteBuffers(1, &m_patternVBO);
         if (m_shaderProgram) glDeleteProgram(m_shaderProgram);
 
         // Cleanup ImGui

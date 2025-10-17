@@ -71,6 +71,12 @@ public:
     std::shared_ptr<SurfaceMesh> applyCutsToMesh(const std::vector<CutCurve>& cuts);
 
     /**
+     * 获取当前的几何信息（在切割后会更新）
+     * @return 几何数据的共享指针
+     */
+    std::shared_ptr<VertexPositionGeometry> getGeometry() const { return geometry_; }
+
+    /**
      * 评估切缝质量
      */
     struct CutQuality {
@@ -87,6 +93,12 @@ protected:
     std::shared_ptr<SurfaceMesh> mesh_;
     std::shared_ptr<VertexPositionGeometry> geometry_;
     std::vector<double> importanceWeights_;
+
+    /**
+     * 保存最后一次计算的切割边路径（用于applyCutsToMesh）
+     * 每个元素是一条切割路径，包含该路径上的所有边
+     */
+    std::vector<std::vector<geometrycentral::surface::Edge>> lastCutEdgePaths_;
 
     /**
      * 内部网格表示（用于与EulerianShapeOptimizer集成）
@@ -147,6 +159,14 @@ protected:
     double computeAverageDistortion(const std::vector<CutCurve>& cuts) const;
     double computeMaxDistortion(const std::vector<CutCurve>& cuts) const;
     double computeVisibilityScore(const std::vector<CutCurve>& cuts) const;
+
+    /**
+     * 将切割边转换为生成树（移除环路）
+     * @param cutMarker 原始切割边标记
+     * @return 生成树的边标记
+     */
+    geometrycentral::surface::EdgeData<char> convertCutEdgesToSpanningTree(
+        const geometrycentral::surface::EdgeData<char>& cutMarker) const;
 };
 
 } // namespace SurfaceTextureMapping
