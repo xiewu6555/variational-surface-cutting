@@ -1859,13 +1859,65 @@ void ImGuiTextureMappingGUI::updateUVGridBuffers() {
     }
     // ========== 诊断结束 ==========
 
-    // 缩放和偏移参数：将UV网格放置在原模型旁边
-    const float uvScale = 2.0f;         // UV空间的缩放因子
-    const float offsetX = 3.0f;         // X轴偏移（放在模型右侧）
-    const float offsetY = 0.0f;         // Y轴偏移
-    const float offsetZ = 0.0f;         // Z轴偏移（UV网格在XY平面上，Z=0）
+    // ========== 步骤1: 计算3D模型包围盒 ==========
+    logMessage("  Computing 3D model bounding box...");
 
-    // 为每个面的边生成线段
+    Vector3 modelMin{1e10, 1e10, 1e10};
+    Vector3 modelMax{-1e10, -1e10, -1e10};
+
+    for (Vertex v : m_mesh->vertices()) {
+        const Vector3& pos = m_geometry->vertexPositions[v];
+        modelMin.x = std::min(modelMin.x, pos.x);
+        modelMin.y = std::min(modelMin.y, pos.y);
+        modelMin.z = std::min(modelMin.z, pos.z);
+        modelMax.x = std::max(modelMax.x, pos.x);
+        modelMax.y = std::max(modelMax.y, pos.y);
+        modelMax.z = std::max(modelMax.z, pos.z);
+    }
+
+    Vector3 modelCenter = (modelMin + modelMax) * 0.5;
+    Vector3 modelSize = modelMax - modelMin;
+
+    logMessage("    Model bounds: [" +
+              std::to_string(modelMin.x) + ", " + std::to_string(modelMax.x) + "] × [" +
+              std::to_string(modelMin.y) + ", " + std::to_string(modelMax.y) + "] × [" +
+              std::to_string(modelMin.z) + ", " + std::to_string(modelMax.z) + "]");
+    logMessage("    Model center: (" +
+              std::to_string(modelCenter.x) + ", " +
+              std::to_string(modelCenter.y) + ", " +
+              std::to_string(modelCenter.z) + ")");
+    logMessage("    Model size: " +
+              std::to_string(modelSize.x) + " × " +
+              std::to_string(modelSize.y) + " × " +
+              std::to_string(modelSize.z));
+
+    // ========== 步骤2: 计算UV展开边界 ==========
+    // 利用前面已计算的minU, maxU, minV, maxV
+    Vector2 uvCenter{(minU + maxU) * 0.5, (minV + maxV) * 0.5};
+    Vector2 uvSize{maxU - minU, maxV - minV};
+
+    logMessage("  Computing UV bounding box...");
+    logMessage("    UV center: (" + std::to_string(uvCenter.x) + ", " + std::to_string(uvCenter.y) + ")");
+    logMessage("    UV size: " + std::to_string(uvSize.x) + " × " + std::to_string(uvSize.y));
+
+    // ========== 步骤3: 计算缩放和偏移参数 ==========
+    // 缩放策略：UV宽度对齐到模型宽度（X方向）
+    double uvScale = (uvSize.x > 1e-10) ? (modelSize.x / uvSize.x) : 1.0;
+
+    // UV平面Y坐标：位于模型底部下方，间隔为包围盒高度的20%
+    double uvPlaneY = modelMin.y - 0.2 * modelSize.y;
+
+    // UV平面XZ中心对齐到模型中心
+    double centerX = modelCenter.x;
+    double centerZ = modelCenter.z;
+
+    logMessage("  UV placement parameters:");
+    logMessage("    UV scale factor: " + std::to_string(uvScale));
+    logMessage("    UV plane Y coordinate: " + std::to_string(uvPlaneY));
+    logMessage("    UV plane horizontal center: (" + std::to_string(centerX) + ", " + std::to_string(centerZ) + ")");
+    logMessage("    Vertical gap from model bottom: " + std::to_string(0.2 * modelSize.y));
+
+    // ========== 步骤4: 为每个面的边生成线段 ==========
     for (Face f : m_mesh->faces()) {
         std::vector<Vertex> verts;
         for (Vertex v : f.adjacentVertices()) {
@@ -1890,12 +1942,21 @@ void ImGuiTextureMappingGUI::updateUVGridBuffers() {
             const auto& uv1 = mapping.uvCoordinates[idx1];
             const auto& uv2 = mapping.uvCoordinates[idx2];
 
-            // 将UV坐标(u,v)映射到3D空间: (x, y, 0) + offset
-            Vector3 p1{uv1.x * uvScale + offsetX, uv1.y * uvScale + offsetY, offsetZ};
-            Vector3 p2{uv2.x * uvScale + offsetX, uv2.y * uvScale + offsetY, offsetZ};
+            // 将UV坐标(u,v)映射到3D空间的水平平面（模型底部）
+            // 映射公式：(x, y, z) = ((u - uCenter) * scale + centerX, planeY, (v - vCenter) * scale + centerZ)
+            Vector3 p1{
+                (uv1.x - uvCenter.x) * uvScale + centerX,  // X: UV的u方向
+                uvPlaneY,                                   // Y: 固定高度（底部）
+                (uv1.y - uvCenter.y) * uvScale + centerZ   // Z: UV的v方向
+            };
+            Vector3 p2{
+                (uv2.x - uvCenter.x) * uvScale + centerX,
+                uvPlaneY,
+                (uv2.y - uvCenter.y) * uvScale + centerZ
+            };
 
-            // 法线向外（Z轴正方向）
-            Vector3 normal{0, 0, 1};
+            // 法线向上（Y轴正方向）- 因为UV平面是水平的
+            Vector3 normal{0, 1, 0};
 
             // 第一个点 (位置 + 法线)
             m_uvGridVertices.push_back(p1.x);
